@@ -1,5 +1,9 @@
 # 绍宋地图 (ShaosongMap)
 
+[![Test](https://github.com/donglongjun886/shaosongmap/actions/workflows/test.yml/badge.svg)](https://github.com/donglongjun886/shaosongmap/actions/workflows/test.yml)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 > 让历史小说读者「边读边看地图」—— 输入战役段落，生成古代地图。
 
 针对《绍宋》等宋代历史小说读者，从截图或文本中自动提取战役地名、将领、行军路线，匹配宋代古地名坐标，渲染为交互式地图。

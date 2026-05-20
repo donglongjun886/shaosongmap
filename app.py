@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from shaosongmap.extractor import extract
 from shaosongmap.geocoder import geocode
-from shaosongmap.models import CampaignMap, GeoFeature, RouteLine
+from shaosongmap.models import CampaignExtract, CampaignMap, GeoFeature, RouteLine
 from shaosongmap.ocr import ocr_main
 
 app = FastAPI(
@@ -40,7 +43,7 @@ class ExtractRequest(BaseModel):
 
 
 class ExtractResponse(BaseModel):
-    """提取响应体。"""
+    """提取响应体（非 SSE 模式下使用）。"""
 
     extract_id: str = Field(description="提取唯一标识")
     campaign_name: str | None
@@ -48,6 +51,16 @@ class ExtractResponse(BaseModel):
     features: list[dict]
     routes: list[dict]
     geojson: dict = Field(description="GeoJSON FeatureCollection，用于前端地图渲染")
+
+
+class RenderRequest(BaseModel):
+    """重新渲染请求体：用户修正后的提取数据。"""
+
+    campaign_name: str | None = Field(default=None, description="战役名称")
+    factions: list[dict] = Field(default_factory=list, description="阵营列表")
+    places: list[dict] = Field(default_factory=list, description="地名列表 [{name, context}]")
+    routes: list[dict] = Field(default_factory=list, description="行军路线 [{from, to, via}]")
+    dynasty: str | None = Field(default=None, description="朝代提示")
 
 
 class OcrResponse(BaseModel):
@@ -184,37 +197,159 @@ def _build_routes(
     return route_lines
 
 
-@app.post("/api/extract", response_model=ExtractResponse)
-async def extract_campaign(request: ExtractRequest):
-    """从战役文本中提取结构化数据并返回地图要素。
+def _sse_event(event: str, data: dict) -> str:
+    """构建一条 SSE 格式的事件字符串。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
-    核心链路：Extractor → Geocoder → GeoJSON。
-    """
-    import uuid
 
-    # 1. 提取
-    try:
-        campaign = extract(request.text)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-
-    # 2. 地名坐标匹配
-    dyn_beg = None
-    dyn_end = None
-    if request.dynasty and request.dynasty in _DYNASTY_YEARS:
-        dyn_beg, dyn_end = _DYNASTY_YEARS[request.dynasty]
+def _run_pipeline(text: str, dynasty: str | None) -> dict:
+    """执行管道并返回提取结果字典。"""
+    campaign = extract(text)
+    dyn_beg, dyn_end = None, None
+    if dynasty and dynasty in _DYNASTY_YEARS:
+        dyn_beg, dyn_end = _DYNASTY_YEARS[dynasty]
 
     features = geocode(
         campaign.places,
-        context_text=request.text,
+        context_text=text,
         dynasty_beg_yr=dyn_beg,
         dynasty_end_yr=dyn_end,
     )
-
-    # 3. 构建行军路线坐标
     route_lines = _build_routes(campaign, features)
+    geojson = _make_geojson(features, route_lines)
 
-    # 4. 构建 GeoJSON
+    return {
+        "extract_id": uuid.uuid4().hex[:12],
+        "campaign_name": campaign.campaign_name,
+        "factions": [f.model_dump(by_alias=True) for f in campaign.factions],
+        "features": [f.model_dump() for f in features],
+        "routes": [r.model_dump() for r in route_lines],
+        "geojson": geojson,
+    }
+
+
+@app.post("/api/extract")
+async def extract_campaign(request: ExtractRequest):
+    """从战役文本中提取结构化数据并返回地图要素（SSE 流式）。
+
+    通过 Server-Sent Events 推送管道各阶段进度，
+    最终以 result 事件返回完整数据。
+    """
+    # 前置校验：空文本直接返回 422，不启动 SSE 流
+    if not request.text.strip():
+        raise HTTPException(status_code=422, detail="战役文本不能为空")
+
+    async def event_stream():
+        # Stage 1: Extract
+        try:
+            campaign = extract(request.text)
+        except ValueError as e:
+            yield _sse_event("error", {"stage": "extract", "message": str(e)})
+            return
+
+        places_count = len(campaign.places)
+        routes_count = len(campaign.routes)
+        yield _sse_event("progress", {
+            "stage": "extract_done",
+            "detail": f"提取结构数据 ({places_count}地名, {routes_count}路线)",
+            "ok": True,
+        })
+
+        # Stage 2: Geocode
+        dyn_beg, dyn_end = None, None
+        if request.dynasty and request.dynasty in _DYNASTY_YEARS:
+            dyn_beg, dyn_end = _DYNASTY_YEARS[request.dynasty]
+
+        try:
+            features = geocode(
+                campaign.places,
+                context_text=request.text,
+                dynasty_beg_yr=dyn_beg,
+                dynasty_end_yr=dyn_end,
+            )
+        except Exception as e:
+            yield _sse_event("error", {"stage": "geocode", "message": str(e)})
+            return
+
+        chgis_count = sum(1 for f in features if f.source == "chgis")
+        llm_count = sum(1 for f in features if f.source == "llm_infer")
+        yield _sse_event("progress", {
+            "stage": "geocode_done",
+            "detail": f"匹配古地名 ({chgis_count} CHGIS + {llm_count} LLM推断)",
+            "ok": True,
+        })
+
+        # Stage 3: Build routes & GeoJSON
+        route_lines = _build_routes(campaign, features)
+        geojson = _make_geojson(features, route_lines)
+
+        yield _sse_event("progress", {
+            "stage": "render_done",
+            "detail": f"渲染地图 ({len(features)}标记, {len(route_lines)}路线)",
+            "ok": True,
+        })
+
+        # Final result
+        result = {
+            "extract_id": uuid.uuid4().hex[:12],
+            "campaign_name": campaign.campaign_name,
+            "factions": [f.model_dump(by_alias=True) for f in campaign.factions],
+            "features": [f.model_dump() for f in features],
+            "routes": [r.model_dump() for r in route_lines],
+            "geojson": geojson,
+        }
+        yield _sse_event("result", result)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.post("/api/render", response_model=ExtractResponse)
+async def render_modified(request: RenderRequest):
+    """接收用户修正后的提取数据，跳过 LLM 提取，直接 geocode + GeoJSON。
+
+    用于前端可编辑面板的「重新渲染」功能。
+    """
+    from shaosongmap.models import Faction, Place, Route
+
+    # 重建 Pydantic 模型
+    try:
+        factions = [Faction(**f) for f in request.factions]
+        places = [Place(**p) for p in request.places]
+        routes = [Route(**r) for r in request.routes]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"数据格式错误: {e}") from e
+
+    campaign = CampaignExtract(
+        campaign_name=request.campaign_name,
+        factions=factions,
+        places=places,
+        routes=routes,
+    )
+
+    # Geocode
+    dyn_beg, dyn_end = None, None
+    if request.dynasty and request.dynasty in _DYNASTY_YEARS:
+        dyn_beg, dyn_end = _DYNASTY_YEARS[request.dynasty]
+
+    try:
+        features = geocode(
+            campaign.places,
+            context_text="",
+            dynasty_beg_yr=dyn_beg,
+            dynasty_end_yr=dyn_end,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"地名匹配失败: {e}") from e
+
+    route_lines = _build_routes(campaign, features)
     geojson = _make_geojson(features, route_lines)
 
     return ExtractResponse(

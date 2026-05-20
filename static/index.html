@@ -49,6 +49,31 @@
   .loading.active { display: flex; }
   .spinner { width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #e63946; border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* 分阶段进度条 */
+  .pipeline-progress { display: none; flex-direction: column; gap: 4px; padding: 8px 0; }
+  .pipeline-progress.active { display: flex; }
+  .pipeline-stage { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #999; }
+  .pipeline-stage .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #ddd; flex-shrink: 0; transition: all 0.3s; }
+  .pipeline-stage.done { color: #333; }
+  .pipeline-stage.done .dot { background: #4caf50; border-color: #4caf50; }
+  .pipeline-stage.active { color: #e63946; font-weight: bold; }
+  .pipeline-stage.active .dot { background: #fff; border-color: #e63946; animation: pulse 1s infinite; }
+  .pipeline-stage.error { color: #d62839; }
+  .pipeline-stage.error .dot { background: #d62839; border-color: #d62839; }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+  /* 可编辑结果面板 */
+  .editable-field { border: 1px solid transparent; border-radius: 4px; padding: 2px 4px; font-size: 13px; background: transparent; font-family: inherit; transition: border 0.2s; }
+  .editable-field:hover { border-color: #ccc; background: #fff; }
+  .editable-field:focus { border-color: #e63946; background: #fff; outline: none; }
+  .editable-field.wide { width: 100%; }
+  .del-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
+  .del-btn:hover { color: #d62839; }
+  .add-btn { background: none; border: 1px dashed #ccc; border-radius: 4px; color: #999; cursor: pointer; font-size: 12px; padding: 2px 8px; }
+  .add-btn:hover { border-color: #e63946; color: #e63946; }
+  .render-btn { padding: 6px 14px; background: #e63946; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
+  .render-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .render-btn.active { animation: glow 0.6s infinite alternate; }
+  @keyframes glow { from { box-shadow: 0 0 4px #e63946; } to { box-shadow: 0 0 12px #e63946; } }
 </style>
 </head>
 <body>
@@ -85,17 +110,20 @@
       </select>
       <button class="btn" id="submit-btn" onclick="analyze()">生成地图</button>
     </div>
-    <div class="loading" id="loading">
-      <div class="spinner"></div> 正在分析战役文本…
+    <div class="pipeline-progress" id="pipeline-progress">
+      <div class="pipeline-stage" id="stage-extract"><span class="dot"></span> 提取结构数据</div>
+      <div class="pipeline-stage" id="stage-geocode"><span class="dot"></span> 匹配古地名</div>
+      <div class="pipeline-stage" id="stage-render"><span class="dot"></span> 渲染地图</div>
     </div>
     <div class="error" id="error-msg" style="display:none"></div>
     <div class="result-section" id="result-panel" style="display:none">
-      <h3>📋 提取结果</h3>
+      <h3>📋 提取结果 <span style="font-weight:normal;font-size:11px;color:#999">(可编辑后重新渲染)</span></h3>
       <div id="campaign-info"></div>
       <h3 style="margin-top:12px">📍 地名坐标</h3>
       <div id="places-list"></div>
       <h3 style="margin-top:12px">🛤️ 行军路线</h3>
       <div id="routes-list"></div>
+      <button class="render-btn" id="render-btn" disabled onclick="reRender()">🔄 重新渲染</button>
     </div>
   </div>
 </div>
@@ -336,7 +364,35 @@ async function doOCR(blob) {
   }
 }
 
-// ─── 原有逻辑 ───
+// ─── 状态 ───
+
+let _lastExtractData = null;  // 最后一次提取的完整数据，供编辑后重新渲染
+let _dataModified = false;    // 用户是否修改了数据
+
+// ─── 分阶段进度条 ───
+
+const STAGES = ['extract', 'geocode', 'render'];
+
+function resetProgress() {
+  const pp = document.getElementById('pipeline-progress');
+  pp.classList.add('active');
+  STAGES.forEach(s => {
+    const el = document.getElementById('stage-' + s);
+    el.className = 'pipeline-stage';
+    el.lastChild.textContent = el.lastChild.textContent.replace(/^[✓✗⏳]\s*/, '');
+  });
+}
+
+function setStageState(stage, state) {
+  const el = document.getElementById('stage-' + stage);
+  el.className = 'pipeline-stage ' + state;
+  const text = el.lastChild.textContent.replace(/^[✓✗⏳]\s*/, '');
+  if (state === 'done') el.lastChild.textContent = '✓ ' + text;
+  else if (state === 'error') el.lastChild.textContent = '✗ ' + text;
+  else if (state === 'active') el.lastChild.textContent = '⏳ ' + text;
+}
+
+// ─── SSE 提取 ───
 
 async function analyze() {
   const text = document.getElementById('text-input').value.trim();
@@ -346,15 +402,15 @@ async function analyze() {
   }
 
   const submitBtn = document.getElementById('submit-btn');
-  const loadingEl = document.getElementById('loading');
   const errorEl = document.getElementById('error-msg');
-
   submitBtn.disabled = true;
-  loadingEl.classList.add('active');
   errorEl.style.display = 'none';
+  document.getElementById('result-panel').style.display = 'none';
+  resetProgress();
+
+  const dynasty = document.getElementById('dynasty-select').value;
 
   try {
-    const dynasty = document.getElementById('dynasty-select').value;
     const resp = await fetch('/api/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -366,13 +422,68 @@ async function analyze() {
       throw new Error(err.detail || `请求失败 (${resp.status})`);
     }
 
-    const data = await resp.json();
-    renderResult(data);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // 解析 SSE 事件
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 保留未完成的行
+
+      let eventType = '';
+      let eventData = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7);
+        } else if (line.startsWith('data: ')) {
+          eventData = line.slice(6);
+          if (eventType === 'progress' || eventType === 'result' || eventType === 'error') {
+            try {
+              const data = JSON.parse(eventData);
+              handleSSEEvent(eventType, data);
+            } catch (_) {}
+          }
+          eventType = '';
+          eventData = '';
+        }
+      }
+    }
   } catch (e) {
     showError(e.message || '服务暂不可用，请稍后重试');
+    STAGES.forEach(s => {
+      const el = document.getElementById('stage-' + s);
+      if (el.classList.contains('active')) setStageState(s, 'error');
+    });
   } finally {
     submitBtn.disabled = false;
-    loadingEl.classList.remove('active');
+  }
+}
+
+function handleSSEEvent(type, data) {
+  if (type === 'progress') {
+    setStageState(data.stage, 'ok' in data && !data.ok ? 'error' : 'done');
+    // 设置下一个阶段为 active
+    const stageOrder = {'extract_done': 'extract', 'geocode_done': 'geocode', 'render_done': 'render'};
+    const idx = STAGES.indexOf(stageOrder[data.stage]);
+    if (idx >= 0 && idx + 1 < STAGES.length) {
+      setStageState(STAGES[idx + 1], 'active');
+    }
+  } else if (type === 'error') {
+    const stageMap = {extract: 'extract', geocode: 'geocode', render: 'render'};
+    const stage = stageMap[data.stage] || 'extract';
+    setStageState(stage, 'error');
+    showError(data.message || '处理失败');
+  } else if (type === 'result') {
+    setStageState('render', 'done');
+    _lastExtractData = data;
+    _dataModified = false;
+    renderEditableResult(data);
+    updateMap(data);
   }
 }
 
@@ -382,56 +493,210 @@ function showError(msg) {
   el.style.display = 'block';
 }
 
-function renderResult(data) {
-  // 结果面板
+// ─── 可编辑结果面板 ───
+
+function renderEditableResult(data) {
   document.getElementById('result-panel').style.display = 'block';
+  const renderBtn = document.getElementById('render-btn');
+  renderBtn.disabled = true;
+  renderBtn.classList.remove('active');
 
-  // 战役信息
-  const info = [];
-  if (data.campaign_name) info.push(`<strong>战役名:</strong> ${data.campaign_name}`);
-  data.factions.forEach(f => {
-    info.push(`<strong>${f.name}:</strong> 将领: ${f.commanders.join('、') || '未知'}，兵力: ${f.troops || '未知'}`);
+  // 战役名
+  const nameHtml = data.campaign_name
+    ? `<strong>战役名:</strong> <input class="editable-field" id="edit-name" value="${escHtml(data.campaign_name)}" oninput="markModified()">`
+    : `<strong>战役名:</strong> <input class="editable-field" id="edit-name" placeholder="未命名" oninput="markModified()">`;
+
+  // 阵营
+  let factionsHtml = '';
+  data.factions.forEach((f, fi) => {
+    const commanders = f.commanders.map((c, ci) =>
+      `<input class="editable-field" id="edit-cmd-${fi}-${ci}" value="${escHtml(c)}" oninput="markModified()"><button class="del-btn" onclick="delCommander(${fi},${ci})" title="删除将领">×</button>`
+    ).join('');
+    factionsHtml += `<div style="margin:4px 0"><strong>${escHtml(f.name)}:</strong> 将领: ${commanders}<button class="add-btn" onclick="addCommander(${fi})">+将领</button> 兵力: <input class="editable-field" id="edit-troops-${fi}" value="${escHtml(f.troops || '')}" placeholder="未知" oninput="markModified()"></div>`;
   });
-  document.getElementById('campaign-info').innerHTML = info.join('<br>');
 
-  // 地名列表
-  document.getElementById('places-list').innerHTML = data.features.map(f => {
+  // 地名
+  let placesHtml = data.features.map((f, i) => {
     const tagClass = f.source === 'chgis' ? 'tag-chgis' : f.source === 'llm_infer' ? 'tag-llm' : 'tag-unknown';
-    const sourceLabel = f.source === 'chgis' ? 'CHGIS' : f.source === 'llm_infer' ? 'LLM推断' : '未知';
     const coords = f.lng ? ` (${f.lng.toFixed(2)}, ${f.lat.toFixed(2)})` : '';
-    const modern = f.modern_name ? ` → 今${f.modern_name}` : '';
-    return `<span class="tag ${tagClass}">${f.name}${coords}${modern} [${sourceLabel}]</span>`;
+    return `<span class="tag ${tagClass}"><input class="editable-field" id="edit-place-${i}" value="${escHtml(f.name)}" style="width:60px" oninput="markModified()">${coords}<button class="del-btn" onclick="delPlace(${i})" title="删除地名">×</button></span>`;
   }).join(' ');
+  placesHtml += ` <button class="add-btn" onclick="addPlace()">+地名</button>`;
 
-  // 路线列表
-  const routeLines = data.routes || [];
-  const geojsonRoutes = (data.geojson.features || []).filter(f => f.geometry.type === 'LineString');
-  const routeHtml = routeLines.length > 0
-    ? routeLines.map(r => `📌 ${r.from_place} → ${r.to_place}`).join('<br>')
-    : '未检测到行军路线';
-  document.getElementById('routes-list').innerHTML = routeHtml;
+  // 路线
+  let routesHtml = '';
+  data.routes.forEach((r, i) => {
+    routesHtml += `<div style="margin:2px 0">📌 <input class="editable-field" id="edit-route-from-${i}" value="${escHtml(r.from_place)}" style="width:60px" oninput="markModified()"> → <input class="editable-field" id="edit-route-to-${i}" value="${escHtml(r.to_place)}" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="delRoute(${i})" title="删除路线">×</button></div>`;
+  });
+  if (!routesHtml) routesHtml = '未检测到行军路线';
+  routesHtml += ` <button class="add-btn" onclick="addRoute()">+路线</button>`;
 
-  // 地图：更新数据源
+  document.getElementById('campaign-info').innerHTML = `<div>${nameHtml}${factionsHtml}</div>`;
+  document.getElementById('places-list').innerHTML = placesHtml;
+  document.getElementById('routes-list').innerHTML = routesHtml;
+}
+
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function markModified() {
+  _dataModified = true;
+  const btn = document.getElementById('render-btn');
+  btn.disabled = false;
+  btn.classList.add('active');
+}
+
+function collectModifiedData() {
+  const name = document.getElementById('edit-name')?.value || '';
+  const data = { campaign_name: name || null, factions: [], places: [], routes: [], dynasty: document.getElementById('dynasty-select').value || null };
+
+  // 收集阵营
+  if (_lastExtractData) {
+    _lastExtractData.factions.forEach((f, fi) => {
+      const commanders = [];
+      let ci = 0;
+      while (true) {
+        const el = document.getElementById(`edit-cmd-${fi}-${ci}`);
+        if (!el) break;
+        const v = el.value.trim();
+        if (v) commanders.push(v);
+        ci++;
+      }
+      const troopsEl = document.getElementById(`edit-troops-${fi}`);
+      data.factions.push({ name: f.name, commanders, troops: troopsEl?.value.trim() || null });
+    });
+  }
+
+  // 收集地名
+  let pi = 0;
+  while (true) {
+    const el = document.getElementById(`edit-place-${pi}`);
+    if (!el) break;
+    const v = el.value.trim();
+    if (v) data.places.push({ name: v, context: '' });
+    pi++;
+  }
+
+  // 收集路线
+  let ri = 0;
+  while (true) {
+    const fromEl = document.getElementById(`edit-route-from-${ri}`);
+    const toEl = document.getElementById(`edit-route-to-${ri}`);
+    if (!fromEl || !toEl) break;
+    const from = fromEl.value.trim();
+    const to = toEl.value.trim();
+    if (from && to) data.routes.push({ from, to, via: [] });
+    ri++;
+  }
+
+  return data;
+}
+
+// ─── 编辑操作 ───
+
+function delPlace(i) {
+  const el = document.getElementById(`edit-place-${i}`);
+  if (el) { el.closest('.tag')?.remove(); markModified(); }
+}
+function addPlace() {
+  const container = document.getElementById('places-list');
+  const btn = container.querySelector('.add-btn');
+  const span = document.createElement('span');
+  span.className = 'tag tag-unknown';
+  const idx = container.querySelectorAll('.tag').length;
+  span.innerHTML = `<input class="editable-field" id="edit-place-${idx}" value="新地名" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="this.closest('.tag').remove();markModified()">×</button>`;
+  btn.before(span);
+  markModified();
+}
+function delCommander(fi, ci) {
+  const el = document.getElementById(`edit-cmd-${fi}-${ci}`);
+  if (el) { el.previousElementSibling?.remove(); el.nextElementSibling?.remove(); el.remove(); markModified(); }
+}
+function addCommander(fi) {
+  let ci = 0;
+  while (document.getElementById(`edit-cmd-${fi}-${ci}`)) ci++;
+  const parent = document.querySelector(`[onclick="addCommander(${fi})"]`).parentNode;
+  const span = document.createElement('span');
+  span.innerHTML = `<input class="editable-field" id="edit-cmd-${fi}-${ci}" value="新将领" oninput="markModified()"><button class="del-btn" onclick="this.previousElementSibling.remove();this.remove();markModified()">×</button>`;
+  parent.querySelector('.add-btn').before(span);
+  markModified();
+}
+function delRoute(i) {
+  const fromEl = document.getElementById(`edit-route-from-${i}`);
+  if (fromEl) fromEl.closest('div').remove();
+  markModified();
+}
+function addRoute() {
+  const container = document.getElementById('routes-list');
+  let ri = container.querySelectorAll('[id^="edit-route-from-"]').length;
+  const div = document.createElement('div');
+  div.style.margin = '2px 0';
+  div.innerHTML = `📌 <input class="editable-field" id="edit-route-from-${ri}" value="起点" style="width:60px" oninput="markModified()"> → <input class="editable-field" id="edit-route-to-${ri}" value="终点" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="this.parentElement.remove();markModified()">×</button>`;
+  const btn = container.querySelector('.add-btn');
+  btn.before(div);
+  markModified();
+}
+
+// ─── 重新渲染 ───
+
+async function reRender() {
+  const data = collectModifiedData();
+  const btn = document.getElementById('render-btn');
+  btn.disabled = true;
+  btn.classList.remove('active');
+  btn.textContent = '⏳ 重新渲染中...';
+
+  try {
+    const resp = await fetch('/api/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || '渲染失败');
+    }
+    const result = await resp.json();
+    _lastExtractData = result;
+    _dataModified = false;
+    updateMap(result);
+    btn.textContent = '✓ 已更新';
+    setTimeout(() => { btn.textContent = '🔄 重新渲染'; }, 1500);
+  } catch (e) {
+    showError(e.message);
+    btn.textContent = '🔄 重试';
+    btn.disabled = false;
+  }
+}
+
+// ─── 地图更新 ───
+
+function updateMap(data) {
   const placeFeatures = (data.geojson.features || []).filter(f => f.geometry.type === 'Point');
+  const routeFeatures = (data.geojson.features || []).filter(f => f.geometry.type === 'LineString');
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
-  map.getSource('routes').setData({ type: 'FeatureCollection', features: geojsonRoutes });
-
-  // 自动缩放到所有要素可见
+  map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
   if (placeFeatures.length > 0) {
     const bounds = new maplibregl.LngLatBounds();
-    placeFeatures.forEach(f => {
-      if (f.geometry && f.geometry.coordinates) {
-        bounds.extend(f.geometry.coordinates);
-      }
-    });
-    geojsonRoutes.forEach(f => {
-      if (f.geometry && f.geometry.coordinates) {
-        f.geometry.coordinates.forEach(c => bounds.extend(c));
-      }
-    });
+    placeFeatures.forEach(f => { if (f.geometry?.coordinates) bounds.extend(f.geometry.coordinates); });
+    routeFeatures.forEach(f => { if (f.geometry?.coordinates) f.geometry.coordinates.forEach(c => bounds.extend(c)); });
     map.fitBounds(bounds, { padding: 60, maxZoom: 10 });
   }
 }
+
+// ─── 键盘快捷键 ───
+
+document.addEventListener('keydown', (e) => {
+  // Ctrl+Enter / Cmd+Enter 提交
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    analyze();
+  }
+  // Esc 关闭 popup / 错误提示
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.maplibregl-popup').forEach(p => p.remove());
+    document.getElementById('error-msg').style.display = 'none';
+  }
+});
 </script>
 </body>
 </html>

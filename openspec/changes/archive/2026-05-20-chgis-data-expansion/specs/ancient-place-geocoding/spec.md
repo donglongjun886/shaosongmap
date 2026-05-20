@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: CHGIS v6 古地名精确匹配
 
@@ -29,31 +29,3 @@
 
 - **WHEN** 系统对一段《绍宋》典型战役文本中提取的地名列表运行 geocode
 - **THEN** 至少 80% 的地名通过 CHGIS 直接命中，仅虚构地名或极小地点走 LLM 推断
-
-### Requirement: LLM 上下文推断兜底
-
-系统 SHALL 在 CHGIS 匹配失败时，调用 LLM 根据文本上下文推断地名的近似经纬度坐标。
-
-LLM 推断 MUST：
-- 接收完整战役文本和未能匹配的地名列作为输入
-- 根据上下文中的已知地名、行军方向、山川河流关系推断近似坐标
-- 返回坐标时标注 `source: "llm_infer"` 和可信度
-
-#### Scenario: LLM 推断山川河流坐标
-
-- **WHEN** 输入地名「汉水」（河流）无法在 CHGIS 中匹配
-- **THEN** LLM 根据上下文中「襄阳」「渡汉水」推断汉水在襄阳附近的坐标段，`source` 为 `"llm_infer"`
-
-#### Scenario: LLM 推断失败
-
-- **WHEN** LLM 也无法推断某地名坐标（如完全无法判断位置的虚构地名）
-- **THEN** 系统返回该地名为 `coordinates: null`，`source: "unknown"`
-
-### Requirement: 所有坐标标注数据来源
-
-系统 SHALL 为每个返回的坐标标注数据来源（`source` 字段），可选值包括 `chgis`、`llm_infer`、`unknown`。
-
-#### Scenario: 前端根据来源区分展示
-
-- **WHEN** 前端渲染地图标记
-- **THEN** `chgis` 来源的标记使用实心图标，`llm_infer` 来源使用空心或半透明图标，`unknown` 来源不在地图上显示

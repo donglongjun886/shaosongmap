@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShaosongMap - 边读边看地图</title>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; height: 100vh; display: flex; }
+  .panel { width: 380px; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid #ddd; background: #fafafa; }
+  .panel-header { padding: 16px; background: #1a1a2e; color: #fff; font-size: 18px; font-weight: bold; }
+  .panel-header small { font-size: 12px; opacity: 0.7; display: block; font-weight: normal; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  textarea { flex: 1; min-height: 200px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; line-height: 1.6; resize: vertical; font-family: inherit; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: #fff; }
+  .btn { padding: 10px 24px; background: #e63946; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; transition: background 0.2s; }
+  .btn:hover { background: #d62839; }
+  .btn:disabled { background: #999; cursor: not-allowed; }
+  .result-section { border-top: 1px solid #eee; padding-top: 12px; }
+  .result-section h3 { font-size: 14px; color: #333; margin-bottom: 8px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px; }
+  .tag-chgis { background: #d4edda; color: #155724; }
+  .tag-llm { background: #fff3cd; color: #856404; }
+  .tag-unknown { background: #f8d7da; color: #721c24; }
+  .map-wrap { flex: 1; position: relative; }
+  #map { width: 100%; height: 100%; }
+  .legend { position: absolute; bottom: 20px; right: 20px; background: rgba(255,255,255,0.9); padding: 10px 14px; border-radius: 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10; }
+  .legend-item { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .maplibregl-popup { max-width: 240px !important; }
+  .maplibregl-popup-content { padding: 12px; border-radius: 8px; font-size: 13px; }
+  .error { color: #d62839; font-size: 13px; }
+  .loading { display: none; align-items: center; gap: 8px; color: #666; font-size: 14px; }
+  .loading.active { display: flex; }
+  .spinner { width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #e63946; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <div class="panel-header">
+    ShaosongMap
+    <small>输入战役文本，生成古代地图</small>
+  </div>
+  <div class="panel-body">
+    <textarea id="text-input" placeholder='粘贴《绍宋》中的战役段落...
+
+示例：
+"岳飞率三万兵马自襄阳渡汉水，经唐州、邓州，直驱汴京。金军完颜宗弼以五万大军据守朱仙镇..."'></textarea>
+    <div class="row">
+      <select id="dynasty-select">
+        <option value="">自动推断朝代</option>
+        <option value="北宋">北宋 (960-1127)</option>
+        <option value="南宋">南宋 (1127-1279)</option>
+        <option value="宋">宋朝 (960-1279)</option>
+        <option value="唐">唐朝 (618-907)</option>
+        <option value="明">明朝 (1368-1644)</option>
+      </select>
+      <button class="btn" id="submit-btn" onclick="analyze()">生成地图</button>
+    </div>
+    <div class="loading" id="loading">
+      <div class="spinner"></div> 正在分析战役文本…
+    </div>
+    <div class="error" id="error-msg" style="display:none"></div>
+    <div class="result-section" id="result-panel" style="display:none">
+      <h3>📋 提取结果</h3>
+      <div id="campaign-info"></div>
+      <h3 style="margin-top:12px">📍 地名坐标</h3>
+      <div id="places-list"></div>
+      <h3 style="margin-top:12px">🛤️ 行军路线</h3>
+      <div id="routes-list"></div>
+    </div>
+  </div>
+</div>
+
+<div class="map-wrap">
+  <div id="map"></div>
+  <div class="legend">
+    <div class="legend-item"><span class="legend-dot" style="background:#155724"></span> CHGIS 精确匹配</div>
+    <div class="legend-item"><span class="legend-dot" style="background:#856404"></span> LLM 推断坐标</div>
+    <div class="legend-item"><span style="color:#e63946">━━━</span> 行军路线</div>
+  </div>
+</div>
+
+<script>
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
+      }
+    },
+    layers: [{ id: 'osm-layer', type: 'raster', source: 'osm' }]
+  },
+  center: [112, 33],
+  zoom: 5
+});
+
+map.on('load', () => {
+  map.addSource('places', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+  // 地名标记层：CHGIS 精确匹配
+  map.addLayer({
+    id: 'places-chgis',
+    type: 'circle',
+    source: 'places',
+    filter: ['==', ['get', 'source'], 'chgis'],
+    paint: {
+      'circle-radius': 8,
+      'circle-color': '#155724',
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#fff'
+    }
+  });
+
+  // 地名标记层：LLM 推断
+  map.addLayer({
+    id: 'places-llm',
+    type: 'circle',
+    source: 'places',
+    filter: ['==', ['get', 'source'], 'llm_infer'],
+    paint: {
+      'circle-radius': 8,
+      'circle-color': '#856404',
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#fff',
+      'circle-stroke-dasharray': [3, 2]
+    }
+  });
+
+  // 地名标签
+  map.addLayer({
+    id: 'place-labels',
+    type: 'symbol',
+    source: 'places',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-offset': [0, 1.5],
+      'text-size': 12
+    },
+    paint: { 'text-color': '#333', 'text-halo-color': '#fff', 'text-halo-width': 2 }
+  });
+
+  // 行军路线
+  map.addLayer({
+    id: 'route-lines',
+    type: 'line',
+    source: 'routes',
+    paint: {
+      'line-color': '#e63946',
+      'line-width': 3,
+      'line-opacity': 0.8
+    }
+  });
+
+  // 路线箭头
+  map.addLayer({
+    id: 'route-arrows',
+    type: 'symbol',
+    source: 'routes',
+    layout: {
+      'symbol-placement': 'line',
+      'symbol-spacing': 120,
+      'text-field': '▶',
+      'text-size': 14
+    },
+    paint: { 'text-color': '#e63946' }
+  });
+
+  // 点击弹窗
+  map.on('click', 'places-chgis', (e) => showPopup(e));
+  map.on('click', 'places-llm', (e) => showPopup(e));
+
+  // 鼠标样式
+  map.on('mouseenter', 'places-chgis', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'places-chgis', () => { map.getCanvas().style.cursor = ''; });
+  map.on('mouseenter', 'places-llm', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'places-llm', () => { map.getCanvas().style.cursor = ''; });
+});
+
+function showPopup(e) {
+  const props = e.features[0].properties;
+  const sourceLabel = props.source === 'chgis' ? 'CHGIS 精确' : 'LLM 推断';
+  const coords = e.features[0].geometry.coordinates.slice();
+  new maplibregl.Popup()
+    .setLngLat(coords)
+    .setHTML(`<strong>${props.name}</strong><br>来源: ${sourceLabel}<br>${props.modern_name ? '今: ' + props.modern_name : ''}`)
+    .addTo(map);
+}
+
+async function analyze() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) {
+    showError('请输入战役文本');
+    return;
+  }
+
+  const submitBtn = document.getElementById('submit-btn');
+  const loadingEl = document.getElementById('loading');
+  const errorEl = document.getElementById('error-msg');
+
+  submitBtn.disabled = true;
+  loadingEl.classList.add('active');
+  errorEl.style.display = 'none';
+
+  try {
+    const dynasty = document.getElementById('dynasty-select').value;
+    const resp = await fetch('/api/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, dynasty: dynasty || null })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || `请求失败 (${resp.status})`);
+    }
+
+    const data = await resp.json();
+    renderResult(data);
+  } catch (e) {
+    showError(e.message || '服务暂不可用，请稍后重试');
+  } finally {
+    submitBtn.disabled = false;
+    loadingEl.classList.remove('active');
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = '⚠️ ' + msg;
+  el.style.display = 'block';
+}
+
+function renderResult(data) {
+  // 结果面板
+  document.getElementById('result-panel').style.display = 'block';
+
+  // 战役信息
+  const info = [];
+  if (data.campaign_name) info.push(`<strong>战役名:</strong> ${data.campaign_name}`);
+  data.factions.forEach(f => {
+    info.push(`<strong>${f.name}:</strong> 将领: ${f.commanders.join('、') || '未知'}，兵力: ${f.troops || '未知'}`);
+  });
+  document.getElementById('campaign-info').innerHTML = info.join('<br>');
+
+  // 地名列表
+  document.getElementById('places-list').innerHTML = data.features.map(f => {
+    const tagClass = f.source === 'chgis' ? 'tag-chgis' : f.source === 'llm_infer' ? 'tag-llm' : 'tag-unknown';
+    const sourceLabel = f.source === 'chgis' ? 'CHGIS' : f.source === 'llm_infer' ? 'LLM推断' : '未知';
+    const coords = f.lng ? ` (${f.lng.toFixed(2)}, ${f.lat.toFixed(2)})` : '';
+    const modern = f.modern_name ? ` → 今${f.modern_name}` : '';
+    return `<span class="tag ${tagClass}">${f.name}${coords}${modern} [${sourceLabel}]</span>`;
+  }).join(' ');
+
+  // 路线列表
+  const routeLines = data.routes || [];
+  const geojsonRoutes = (data.geojson.features || []).filter(f => f.geometry.type === 'LineString');
+  const routeHtml = routeLines.length > 0
+    ? routeLines.map(r => `📌 ${r.from_place} → ${r.to_place}`).join('<br>')
+    : '未检测到行军路线';
+  document.getElementById('routes-list').innerHTML = routeHtml;
+
+  // 地图：更新数据源
+  const placeFeatures = (data.geojson.features || []).filter(f => f.geometry.type === 'Point');
+  map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
+  map.getSource('routes').setData({ type: 'FeatureCollection', features: geojsonRoutes });
+
+  // 自动缩放到所有要素可见
+  if (placeFeatures.length > 0) {
+    const bounds = new maplibregl.LngLatBounds();
+    placeFeatures.forEach(f => {
+      if (f.geometry && f.geometry.coordinates) {
+        bounds.extend(f.geometry.coordinates);
+      }
+    });
+    geojsonRoutes.forEach(f => {
+      if (f.geometry && f.geometry.coordinates) {
+        f.geometry.coordinates.forEach(c => bounds.extend(c));
+      }
+    });
+    map.fitBounds(bounds, { padding: 60, maxZoom: 10 });
+  }
+}
+</script>
+</body>
+</html>

@@ -143,3 +143,14 @@ pytest tests/ -k "geocode" -v
 # 重新生成 CHGIS 数据（需要网络）
 python scripts/build_chgis.py
 ```
+
+## 许可
+
+本项目采用**双重许可**：
+
+| 范围 | 许可 | 说明 |
+|------|------|------|
+| 代码（`shaosongmap/`、`app.py`、`static/`、`scripts/`、`tests/`） | [MIT License](LICENSE) | 可自由使用、修改、分发，仅需保留版权声明 |
+| 数据（`data/chgis_v6/chgis_v6_points.csv`） | [CHGIS v6 学术许可](https://dataverse.harvard.edu/dataverse/chgis_v6) | 免费用于学术和个人用途；商业使用需联系 Harvard Fairbank Center for Chinese Studies |
+
+CHGIS v6 数据版权归 &copy; Fairbank Center for Chinese Studies, Harvard University 所有。`data/chgis_v6/chgis_v6_points.csv` 是从 CHGIS v6 原始数据筛选衍生的子集，遵循原始数据的许可条款。

@@ -195,7 +195,16 @@ map.on('load', () => {
     type: 'symbol',
     source: 'places',
     layout: {
-      'text-field': ['get', 'name'],
+      'text-field': [
+        'case',
+        ['!=', ['get', 'modern_name'], ''],
+        ['format',
+          ['get', 'name'], { 'text-color': '#1a1a1a', 'text-font': ['bold'] },
+          '\n',
+          ['get', 'modern_name'], { 'text-color': '#888888', 'text-font': ['italic'] }
+        ],
+        ['get', 'name']
+      ],
       'text-offset': [0, 1.5],
       'text-size': 12
     },

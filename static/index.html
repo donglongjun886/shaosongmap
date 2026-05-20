@@ -30,6 +30,18 @@
   .legend { position: absolute; bottom: 20px; right: 20px; background: rgba(255,255,255,0.9); padding: 10px 14px; border-radius: 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10; }
   .legend-item { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .drop-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 16px; text-align: center; color: #999; font-size: 13px; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #e63946; background: #fff5f5; color: #e63946; }
+  .drop-zone.has-image { border-style: solid; border-color: #4caf50; background: #f0faf0; color: #333; }
+  .drop-zone img { max-height: 120px; max-width: 100%; border-radius: 4px; margin-top: 8px; }
+  .drop-zone .clear-btn { display: none; position: absolute; top: 4px; right: 4px; background: #d62839; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 14px; cursor: pointer; line-height: 1; }
+  .drop-zone.has-image .clear-btn { display: block; }
+  .drop-wrap { position: relative; }
+  .drop-zone .hint { display: block; }
+  .drop-zone.has-image .hint { display: none; }
+  .ocr-progress { display: none; align-items: center; gap: 8px; color: #666; font-size: 12px; }
+  .ocr-progress.active { display: flex; }
+  .small { font-size: 11px; color: #999; margin-top: 4px; display: block; }
   .maplibregl-popup { max-width: 240px !important; }
   .maplibregl-popup-content { padding: 12px; border-radius: 8px; font-size: 13px; }
   .error { color: #d62839; font-size: 13px; }
@@ -47,6 +59,17 @@
     <small>输入战役文本，生成古代地图</small>
   </div>
   <div class="panel-body">
+    <div class="drop-wrap">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <span class="hint">📷 拖拽截图到此处，或点击上传<br><span class="small">也支持 Ctrl+V 粘贴截图</span></span>
+        <button class="clear-btn" onclick="clearImage(event)" title="清除图片">×</button>
+        <img id="preview-img" style="display:none">
+      </div>
+      <div class="ocr-progress" id="ocr-progress">
+        <div class="spinner"></div> <span id="ocr-progress-text">正在识别截图文字…</span>
+      </div>
+      <input type="file" id="file-input" accept="image/png,image/jpeg" style="display:none" onchange="handleFileSelect(event)">
+    </div>
     <textarea id="text-input" placeholder='粘贴《绍宋》中的战役段落...
 
 示例：
@@ -198,10 +221,127 @@ function showPopup(e) {
     .addTo(map);
 }
 
+// ─── 截图上传逻辑 ───
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const ocrProgress = document.getElementById('ocr-progress');
+const ocrProgressText = document.getElementById('ocr-progress-text');
+
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) processImage(file);
+});
+
+document.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      processImage(item.getAsFile());
+      return;
+    }
+  }
+});
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) processImage(file);
+}
+
+function clearImage(e) {
+  e.stopPropagation();
+  dropZone.classList.remove('has-image');
+  document.getElementById('preview-img').style.display = 'none';
+  fileInput.value = '';
+  _ocrBlob = null;
+}
+
+let _ocrBlob = null;
+
+async function processImage(file) {
+  if (!file.type.match(/image\/(png|jpeg)/)) {
+    showError('仅支持 PNG 和 JPEG 格式');
+    return;
+  }
+
+  // 显示预览
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = document.getElementById('preview-img');
+    img.src = e.target.result;
+    img.style.display = 'block';
+    dropZone.classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+
+  // 图片预处理：缩放到最长边 1920px
+  _ocrBlob = await resizeImage(file, 1920);
+
+  // 自动调用 OCR
+  await doOCR(_ocrBlob);
+}
+
+async function resizeImage(file, maxDim) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width <= maxDim && height <= maxDim) {
+        resolve(file);
+        return;
+      }
+      const ratio = Math.min(maxDim / width, maxDim / height);
+      width = Math.round(width * ratio);
+      height = Math.round(height * ratio);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => resolve(blob), file.type, 0.85);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function doOCR(blob) {
+  ocrProgress.classList.add('active');
+  ocrProgressText.textContent = '正在识别截图文字…';
+  const errorEl = document.getElementById('error-msg');
+  errorEl.style.display = 'none';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', blob, 'screenshot.png');
+    const resp = await fetch('/api/ocr', { method: 'POST', body: formData });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || 'OCR 识别失败');
+    }
+
+    const data = await resp.json();
+    document.getElementById('text-input').value = data.text;
+    ocrProgressText.textContent = `识别完成，共 ${data.text.length} 字，可校对后点击生成地图`;
+    setTimeout(() => { ocrProgress.classList.remove('active'); }, 2000);
+  } catch (e) {
+    showError(e.message || 'OCR 识别失败，请重试');
+    ocrProgress.classList.remove('active');
+  }
+}
+
+// ─── 原有逻辑 ───
+
 async function analyze() {
   const text = document.getElementById('text-input').value.trim();
   if (!text) {
-    showError('请输入战役文本');
+    showError('请输入战役文本或上传截图');
     return;
   }
 

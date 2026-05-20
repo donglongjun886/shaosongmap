@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from shaosongmap.extractor import extract
 from shaosongmap.geocoder import geocode
 from shaosongmap.models import CampaignMap, GeoFeature, RouteLine
+from shaosongmap.ocr import ocr_main
 
 app = FastAPI(
     title="ShaosongMap",
@@ -47,6 +48,48 @@ class ExtractResponse(BaseModel):
     features: list[dict]
     routes: list[dict]
     geojson: dict = Field(description="GeoJSON FeatureCollection，用于前端地图渲染")
+
+
+class OcrResponse(BaseModel):
+    """OCR 响应体。"""
+
+    text: str = Field(description="清洗后的连续文本段落")
+    raw_lines: int = Field(description="OCR 原始识别行数")
+
+
+_ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
+_MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+@app.post("/api/ocr", response_model=OcrResponse)
+async def ocr_image(file: UploadFile = File(...)):
+    """接收截图上传，OCR 识别后返回清洗文本。
+
+    支持 PNG 和 JPEG 格式，最大 10MB。
+    返回的文本可直接用于 /api/extract。
+    """
+    if file.content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持 PNG 和 JPEG 格式",
+        )
+
+    image_bytes = await file.read()
+    if len(image_bytes) > _MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"图片大小不能超过 {_MAX_IMAGE_SIZE // 1024 // 1024}MB",
+        )
+
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="图片不能为空")
+
+    try:
+        text, raw_lines = ocr_main(image_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    return OcrResponse(text=text, raw_lines=raw_lines)
 
 
 # 朝代时间范围映射

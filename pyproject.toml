@@ -4,9 +4,12 @@ version = "0.1.0"
 description = "让历史小说读者「边读边看地图」——输入战役段落，生成古代地图"
 requires-python = ">=3.10"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "donglongjun" }]
 keywords = ["history", "map", "chgis", "song-dynasty", "ocr"]
+
+[tool.setuptools.packages.find]
+include = ["shaosongmap*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

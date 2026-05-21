@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 从战役文本提取结构化数据
 
@@ -11,7 +11,7 @@
 - `routes`: 行军路线列表，每条包含起点、终点、途经地点
 - `events`: 事件序列列表（timeline 模式），按时间顺序排列的军事行动事件。每个事件 MUST 包含序号（`seq`）、事件类型（`event_type`: march / battle / encamp / retreat）、中文描述（`description`）、参与方（`actors`）、涉及地名（`places_involved`）。事件涉及的地名 MUST 出现在全局 `places` 数组中。当用户请求 timeline 模式时 MUST 返回；static 模式时可为空数组。
 
-系统 MUST 能区分文本中的实际军事行动和人物对话/议论内容。人物言论中假设、建议或讨论的军事行动（如「臣以为应从X出兵」）MUST NOT 被视为实际行军节点。朝堂对话和场景描写段落 MUST 被忽略，仅从军事行动描述段落中提取信息。事件序列中的事件同样 MUST 仅来源于实际军事行动，对话中的假设行动不可成为事件。
+系统 MUST 能区分文本中的实际军事行动和人物对话/议论内容。人物言论中假设、建议或讨论的军事行动（如「臣以为应从X出兵」）MUST NOT 被视为实际行军节点。朝堂对话和场景描写段落 MUST 被忽略，仅从军事行动描述段落中提取信息。**事件序列中的事件同样 MUST 仅来源于实际军事行动，对话中的假设行动不可成为事件。**
 
 #### Scenario: 成功提取完整战役信息
 
@@ -43,14 +43,7 @@
 - **WHEN** 用户在 timeline 模式下提交包含时序军事行动的战役文本
 - **THEN** 系统返回的 `events` 数组包含按时间顺序排列的事件，每个事件有正确的 `event_type`、`description`、`actors` 和 `places_involved`
 
-### Requirement: 提取结果包含数据来源标记
-
-系统 SHALL 在提取结果中保留原始文本片段，供后续 Geocoder 和前端引用。
-
-#### Scenario: 地名与原文关联
-
-- **WHEN** 系统提取地名列表
-- **THEN** 每个地名 MUST 附带其在原文中的位置或上下文片段，供 Geocoder 消歧义使用
+## ADDED Requirements
 
 ### Requirement: 时间线模式提取开关
 

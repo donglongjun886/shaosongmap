@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +39,27 @@ class CampaignExtract(BaseModel):
     factions: list[Faction] = Field(default_factory=list, description="参战方")
     places: list[Place] = Field(default_factory=list, description="地名列表")
     routes: list[Route] = Field(default_factory=list, description="行军路线")
+
+
+# ── 时间线事件类型 ──
+
+TimelineEventType = Literal["march", "battle", "encamp", "retreat"]
+
+
+class TimelineEvent(BaseModel):
+    """时间线中的单个事件节点。"""
+
+    seq: int = Field(ge=1, description="事件序号，从 1 开始")
+    event_type: TimelineEventType = Field(description="事件类型：march / battle / encamp / retreat")
+    description: str = Field(description="一句话中文描述，概括原文内容")
+    actors: list[str] = Field(default_factory=list, description="参与的将领或部队名称")
+    places_involved: list[str] = Field(default_factory=list, description="事件涉及的地名，须为 places 中的已有地名")
+
+
+class CampaignTimeline(CampaignExtract):
+    """时间线模式输出：继承战役提取结果，附加事件序列。"""
+
+    events: list[TimelineEvent] = Field(default_factory=list, description="按时间顺序排列的事件序列")
 
 
 class GeoFeature(BaseModel):

@@ -12,9 +12,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from shaosongmap.extractor import extract
+from shaosongmap.extractor import extract, extract_timeline
 from shaosongmap.geocoder import geocode
-from shaosongmap.models import CampaignExtract, CampaignMap, GeoFeature, RouteLine
+from shaosongmap.models import CampaignExtract, CampaignMap, CampaignTimeline, GeoFeature, RouteLine, TimelineEvent
 from shaosongmap.ocr import ocr_main
 
 app = FastAPI(
@@ -39,6 +39,10 @@ class ExtractRequest(BaseModel):
     dynasty: str | None = Field(
         default=None,
         description="朝代提示（如「宋」「北宋」「南宋」），用于 CHGIS 时间过滤",
+    )
+    mode: str | None = Field(
+        default=None,
+        description="提取模式：timeline（返回事件序列）或 static（默认，仅静态结构）",
     )
 
 
@@ -116,39 +120,74 @@ _DYNASTY_YEARS: dict[str, tuple[int, int]] = {
 }
 
 
-def _make_geojson(features: list[GeoFeature], routes: list[RouteLine]) -> dict:
-    """将 GeoFeature 和 RouteLine 列表转换为 GeoJSON FeatureCollection。"""
+def _compute_step_map(events: list[TimelineEvent]) -> dict[str, int]:
+    """从事件序列计算每个地名首次被激活的步骤编号。"""
+    step_map: dict[str, int] = {}
+    for event in events:
+        for place_name in event.places_involved:
+            if place_name not in step_map:
+                step_map[place_name] = event.seq
+    return step_map
+
+
+def _make_geojson(
+    features: list[GeoFeature],
+    routes: list[RouteLine],
+    events: list[TimelineEvent] | None = None,
+) -> dict:
+    """将 GeoFeature 和 RouteLine 列表转换为 GeoJSON FeatureCollection。
+
+    timeline 模式下（提供 events 参数），每个 feature 的 properties
+    中注入 step 属性，供前端按步骤过滤渲染。
+    """
+    step_map: dict[str, int] | None = None
+    if events:
+        step_map = _compute_step_map(events)
+
     geojson_features = []
 
     for feat in features:
         if feat.lng is not None and feat.lat is not None:
+            props: dict = {
+                "name": feat.name,
+                "source": feat.source,
+                "modern_name": feat.modern_name,
+                "confidence": feat.confidence,
+            }
+            if step_map is not None:
+                props["step"] = step_map.get(feat.name, 0)
             geojson_features.append({
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
                     "coordinates": [feat.lng, feat.lat],
                 },
-                "properties": {
-                    "name": feat.name,
-                    "source": feat.source,
-                    "modern_name": feat.modern_name,
-                    "confidence": feat.confidence,
-                },
+                "properties": props,
             })
 
     for route in routes:
         if len(route.coordinates) >= 2:
+            props: dict = {
+                "type": "route",
+                "from": route.from_place,
+                "to": route.to_place,
+            }
+            if step_map is not None:
+                to_step = step_map.get(route.to_place)
+                from_step = step_map.get(route.from_place)
+                if to_step is not None:
+                    props["step"] = to_step
+                elif from_step is not None:
+                    props["step"] = from_step
+                else:
+                    props["step"] = 1
             geojson_features.append({
                 "type": "Feature",
                 "geometry": {
                     "type": "LineString",
                     "coordinates": route.coordinates,
                 },
-                "properties": {
-                    "type": "route",
-                    "from": route.from_place,
-                    "to": route.to_place,
-                },
+                "properties": props,
             })
 
     return {
@@ -241,17 +280,26 @@ async def extract_campaign(request: ExtractRequest):
 
     async def event_stream():
         # Stage 1: Extract
+        use_timeline = request.mode == "timeline"
         try:
-            campaign = extract(request.text)
+            if use_timeline:
+                campaign = extract_timeline(request.text)
+            else:
+                campaign = extract(request.text)
         except ValueError as e:
             yield _sse_event("error", {"stage": "extract", "message": str(e)})
             return
 
         places_count = len(campaign.places)
         routes_count = len(campaign.routes)
+        events_count = len(getattr(campaign, "events", []))
+        extract_detail = f"提取结构数据 ({places_count}地名, {routes_count}路线"
+        if use_timeline:
+            extract_detail += f", {events_count}事件"
+        extract_detail += ")"
         yield _sse_event("progress", {
             "stage": "extract_done",
-            "detail": f"提取结构数据 ({places_count}地名, {routes_count}路线)",
+            "detail": extract_detail,
             "ok": True,
         })
 
@@ -281,16 +329,20 @@ async def extract_campaign(request: ExtractRequest):
 
         # Stage 3: Build routes & GeoJSON
         route_lines = _build_routes(campaign, features)
-        geojson = _make_geojson(features, route_lines)
+        timeline_events = getattr(campaign, "events", []) if use_timeline else None
+        geojson = _make_geojson(features, route_lines, events=timeline_events)
 
+        render_detail = f"渲染地图 ({len(features)}标记, {len(route_lines)}路线)"
+        if use_timeline and timeline_events:
+            render_detail += f", {len(timeline_events)}步骤"
         yield _sse_event("progress", {
             "stage": "render_done",
-            "detail": f"渲染地图 ({len(features)}标记, {len(route_lines)}路线)",
+            "detail": render_detail,
             "ok": True,
         })
 
         # Final result
-        result = {
+        result: dict = {
             "extract_id": uuid.uuid4().hex[:12],
             "campaign_name": campaign.campaign_name,
             "factions": [f.model_dump(by_alias=True) for f in campaign.factions],
@@ -298,6 +350,9 @@ async def extract_campaign(request: ExtractRequest):
             "routes": [r.model_dump() for r in route_lines],
             "geojson": geojson,
         }
+        if use_timeline and timeline_events:
+            result["events"] = [e.model_dump() for e in timeline_events]
+            result["total_steps"] = len(timeline_events)
         yield _sse_event("result", result)
 
     return StreamingResponse(

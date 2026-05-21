@@ -24,4 +24,4 @@ jobs:
           pip install -r requirements-ci.txt
 
       - name: Run tests
-        run: PYTHONPATH=. pytest tests/ -v
+        run: DEEPSEEK_API_KEY=test-key PYTHONPATH=. pytest tests/ -v

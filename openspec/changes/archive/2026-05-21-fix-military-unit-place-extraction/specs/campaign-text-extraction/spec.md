@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 从战役文本提取结构化数据
 
@@ -57,28 +57,7 @@
 - **WHEN** LLM 返回的 places 中某地名的 context 字段显示该地名后紧跟军队编制后缀（如「秦凤路大军自渭州出发」）
 - **THEN** 后处理过滤函数 MUST 从 places 列表中移除该条目，同时保留同一地名的其他独立出现（如文末「秦凤路境内」）
 
-### Requirement: 提取结果包含数据来源标记
-
-系统 SHALL 在提取结果中保留原始文本片段，供后续 Geocoder 和前端引用。
-
-#### Scenario: 地名与原文关联
-
-- **WHEN** 系统提取地名列表
-- **THEN** 每个地名 MUST 附带其在原文中的位置或上下文片段，供 Geocoder 消歧义使用
-
-### Requirement: 时间线模式提取开关
-
-系统 SHALL 支持通过参数切换提取模式：`mode="timeline"` 时启用事件序列提取，`mode="static"`（默认）时仅提取静态结构。
-
-#### Scenario: timeline 模式显式请求
-
-- **WHEN** 请求中 `mode` 字段为 `"timeline"`
-- **THEN** 系统调用 `extract_timeline()` 函数，返回包含 `events` 数组的结果
-
-#### Scenario: 默认 static 模式
-
-- **WHEN** 请求中未指定 `mode` 字段或指定为 `"static"`
-- **THEN** 系统调用 `extract()` 函数，`events` 为空数组，行为与当前版本一致
+## ADDED Requirements
 
 ### Requirement: 地名类型标记
 

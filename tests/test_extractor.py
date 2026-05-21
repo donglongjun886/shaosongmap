@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from shaosongmap.extractor import extract
-from shaosongmap.models import CampaignExtract
+from shaosongmap.extractor import _filter_military_unit_places, extract
+from shaosongmap.models import CampaignExtract, Place
 
 
 def _mock_response(json_data: dict) -> MagicMock:
@@ -131,3 +131,113 @@ def test_extract_mixed_content_with_military(mock_openai: MagicMock):
     assert len(result.routes) == 1
     # 秦桧是对话人物，不是实际将领
     assert "秦桧" not in result.factions[0].commanders
+
+
+# ── 军队编制名过滤测试 ──
+
+
+class TestFilterMilitaryUnitPlaces:
+    """后处理过滤函数单元测试。"""
+
+    def test_filter_army_suffix_dajun(self):
+        """「X路大军」模式中的地名应被过滤。"""
+        places = [
+            {"name": "秦凤路", "context": "秦凤路大军自渭州出发"},
+            {"name": "渭州", "context": "自渭州出发"},
+        ]
+        result = _filter_military_unit_places(places)
+        names = {p["name"] for p in result}
+        assert "秦凤路" not in names
+        assert "渭州" in names
+
+    def test_filter_army_suffix_bingma(self):
+        """「X路兵马」模式中的地名应被过滤。"""
+        places = [
+            {"name": "泾原路", "context": "泾原路兵马驰援"},
+            {"name": "原州", "context": "驰援原州"},
+        ]
+        result = _filter_military_unit_places(places)
+        names = {p["name"] for p in result}
+        assert "泾原路" not in names
+        assert "原州" in names
+
+    def test_keep_standalone_place(self):
+        """独立使用的地名应保留。"""
+        places = [
+            {"name": "秦凤路", "context": "大军自秦凤路出发，秦凤路境内多山地"},
+        ]
+        result = _filter_military_unit_places(places)
+        assert len(result) == 1
+        assert result[0]["name"] == "秦凤路"
+
+    def test_filter_empty_context(self):
+        """context 为空时不抛异常，保留该条目。"""
+        places = [
+            {"name": "某地", "context": ""},
+        ]
+        result = _filter_military_unit_places(places)
+        assert len(result) == 1
+
+    def test_filter_no_name(self):
+        """name 为空时不抛异常，保留该条目。"""
+        places = [
+            {"name": "", "context": "大军出发"},
+        ]
+        result = _filter_military_unit_places(places)
+        assert len(result) == 1
+
+    def test_filter_multiple_military_patterns(self):
+        """多种军队编制模式同时存在，全部过滤。"""
+        places = [
+            {"name": "环庆路", "context": "环庆路将士率先抵达"},
+            {"name": "熙河路", "context": "熙河路各部随后跟进"},
+            {"name": "鄜延路", "context": "鄜延路兵马断后"},
+            {"name": "潼关", "context": "会师于潼关"},
+        ]
+        result = _filter_military_unit_places(places)
+        names = {p["name"] for p in result}
+        assert names == {"潼关"}  # 只有独立地名保留
+
+
+@patch("shaosongmap.extractor.OpenAI")
+def test_extract_filters_military_unit_places(mock_openai: MagicMock):
+    """集成测试：extract() 返回前过滤军队编制名。"""
+    mock_openai.return_value.chat.completions.create.return_value = _mock_response({
+        "campaign_name": "宋夏战争",
+        "factions": [
+            {"name": "宋军", "commanders": ["刘昌祚"], "troops": "五万"},
+            {"name": "夏军", "commanders": [], "troops": None},
+        ],
+        "places": [
+            {"name": "秦凤路", "context": "秦凤路大军自渭州出发"},
+            {"name": "泾原路", "context": "泾原路兵马驰援"},
+            {"name": "渭州", "context": "自渭州出发"},
+            {"name": "原州", "context": "驰援原州"},
+        ],
+        "routes": [
+            {"from": "渭州", "to": "原州"},
+        ],
+    })
+
+    result = extract("秦凤路大军自渭州出发，泾原路兵马驰援原州。")
+    place_names = {p.name for p in result.places}
+    assert "秦凤路" not in place_names
+    assert "泾原路" not in place_names
+    assert "渭州" in place_names
+    assert "原州" in place_names
+
+
+def test_place_type_field():
+    """Place 模型接受 place_type 字段。"""
+    place = Place(name="潼关", context="至潼关", place_type="mountain_pass")
+    assert place.place_type == "mountain_pass"
+
+    # 不传 place_type 时默认为 None
+    place2 = Place(name="渭州", context="自渭州")
+    assert place2.place_type is None
+
+
+def test_place_type_validation():
+    """place_type 仅接受枚举值。"""
+    with pytest.raises(ValueError):
+        Place(name="测试", context="测试", place_type="invalid_type")

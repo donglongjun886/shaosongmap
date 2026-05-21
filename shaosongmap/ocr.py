@@ -137,6 +137,79 @@ def recognize(image_bytes: bytes) -> list[str]:
     return lines
 
 
+def _longest_common_substring(s1: str, s2: str) -> tuple[int, int]:
+    """在 s1 和 s2 中查找最长公共子串。
+
+    使用动态规划，O(m*n) 复杂度。用于相邻截图文的重叠检测。
+
+    Args:
+        s1: 前一段文本的尾部（最多 200 字符）
+        s2: 后一段文本的头部（最多 200 字符）
+
+    Returns:
+        (s2_start, length): 公共子串在 s2 中的起始位置和长度
+    """
+    m, n = len(s1), len(s2)
+    if m == 0 or n == 0:
+        return 0, 0
+
+    prev = [0] * (n + 1)
+    max_len = 0
+    start_s2 = 0
+
+    for i in range(1, m + 1):
+        curr = [0] * (n + 1)
+        for j in range(1, n + 1):
+            if s1[i - 1] == s2[j - 1]:
+                curr[j] = prev[j - 1] + 1
+                if curr[j] > max_len:
+                    max_len = curr[j]
+                    start_s2 = j - curr[j]
+        prev = curr
+
+    return start_s2, max_len
+
+
+def merge_texts(texts: list[str]) -> tuple[str, int]:
+    """对多段 OCR 清洗后文本进行相邻去重拼接。
+
+    对相邻文本段执行前后缀最长公共子串匹配，自动去除截图之间的
+    重叠部分后拼接为完整文本。匹配窗口限定在 200 字符以内。
+
+    Args:
+        texts: 按截图顺序排列的 OCR 清洗后文本列表
+
+    Returns:
+        (拼接后完整文本, 去除的重复字符总数)
+    """
+    if not texts:
+        return "", 0
+    if len(texts) == 1:
+        return texts[0], 0
+
+    result = texts[0]
+    total_removed = 0
+
+    for i in range(1, len(texts)):
+        next_text = texts[i]
+        # 取累计结果的尾部和下一段文本的头部进行匹配
+        tail = result[-200:] if len(result) > 200 else result
+        head = next_text[:200] if len(next_text) > 200 else next_text
+
+        start_s2, length = _longest_common_substring(tail, head)
+
+        if length >= 5:
+            overlap = head[start_s2:start_s2 + length]
+            idx = next_text.find(overlap)
+            if idx >= 0:
+                next_text = next_text[idx + length:]
+                total_removed += length
+
+        result += next_text
+
+    return result, total_removed
+
+
 def ocr_main(image_bytes: bytes) -> tuple[str, int]:
     """OCR 识别 + 清洗的主入口。
 

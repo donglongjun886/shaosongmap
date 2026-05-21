@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from shaosongmap.extractor import extract, extract_timeline
 from shaosongmap.geocoder import geocode
 from shaosongmap.models import CampaignExtract, CampaignMap, CampaignTimeline, GeoFeature, RouteLine, TimelineEvent
-from shaosongmap.ocr import ocr_main
+from shaosongmap.ocr import merge_texts, ocr_main
 
 app = FastAPI(
     title="ShaosongMap",
@@ -107,6 +107,88 @@ async def ocr_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail=str(e)) from e
 
     return OcrResponse(text=text, raw_lines=raw_lines)
+
+
+_MAX_BATCH_SIZE = 10
+
+
+@app.post("/api/ocr/batch")
+async def ocr_batch(files: list[UploadFile] = File(...)):
+    """批量截图 OCR：接收多张截图，依次识别后去重拼接。
+
+    通过 SSE 流式返回每张图的处理进度，最终返回拼接后的完整文本。
+    最多支持 10 张截图，单张失败则整体中止并指明失败序号。
+    """
+    if len(files) > _MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"每次最多上传 {_MAX_BATCH_SIZE} 张截图",
+        )
+    if len(files) == 0:
+        raise HTTPException(status_code=400, detail="请至少上传一张截图")
+
+    # 先读取所有文件内容，避免 StreamingResponse 中文件被提前关闭
+    file_data: list[tuple[str, bytes]] = []
+    for i, file in enumerate(files):
+        label = f"第 {i + 1} 张"
+        if file.content_type not in _ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{label}截图格式不支持，仅支持 PNG 和 JPEG 格式",
+            )
+        image_bytes = await file.read()
+        if len(image_bytes) > _MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"{label}截图大小超过 {_MAX_IMAGE_SIZE // 1024 // 1024}MB 限制",
+            )
+        if len(image_bytes) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{label}截图不能为空",
+            )
+        file_data.append((label, image_bytes))
+
+    async def event_stream():
+        texts: list[str] = []
+        total = len(file_data)
+
+        for label, img_bytes in file_data:
+            try:
+                text, _raw_lines = ocr_main(img_bytes)
+            except ValueError as e:
+                yield _sse_event("error", {
+                    "message": f"{label}截图识别失败: {e}",
+                })
+                return
+
+            texts.append(text)
+            yield _sse_event("progress", {
+                "current": len(texts),
+                "total": total,
+                "char_count": len(text),
+            })
+
+        # 去重拼接
+        original_chars = sum(len(t) for t in texts)
+        merged_text, removed_dup = merge_texts(texts)
+        yield _sse_event("merge", {
+            "original_chars": original_chars,
+            "merged_chars": len(merged_text),
+            "removed_dup": removed_dup,
+        })
+
+        yield _sse_event("complete", {"text": merged_text})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # 朝代时间范围映射

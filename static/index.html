@@ -35,15 +35,25 @@
   .legend-toggle input { margin: 0; cursor: pointer; }
   .drop-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 16px; text-align: center; color: #999; font-size: 13px; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
   .drop-zone:hover, .drop-zone.dragover { border-color: #e63946; background: #fff5f5; color: #e63946; }
-  .drop-zone.has-image { border-style: solid; border-color: #4caf50; background: #f0faf0; color: #333; }
-  .drop-zone img { max-height: 120px; max-width: 100%; border-radius: 4px; margin-top: 8px; }
-  .drop-zone .clear-btn { display: none; position: absolute; top: 4px; right: 4px; background: #d62839; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 14px; cursor: pointer; line-height: 1; }
-  .drop-zone.has-image .clear-btn { display: block; }
-  .drop-wrap { position: relative; }
   .drop-zone .hint { display: block; }
-  .drop-zone.has-image .hint { display: none; }
-  .ocr-progress { display: none; align-items: center; gap: 8px; color: #666; font-size: 12px; }
+  .drop-wrap { position: relative; }
+  .ocr-progress { display: none; align-items: center; gap: 8px; color: #666; font-size: 12px; margin-top: 8px; }
   .ocr-progress.active { display: flex; }
+  /* 缩略图列表 */
+  .thumb-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .thumb-item { position: relative; width: 72px; height: 72px; border: 2px solid #e0e0e0; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+  .thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb-item .thumb-idx { position: absolute; top: 2px; left: 2px; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px; }
+  .thumb-item .thumb-del { position: absolute; top: 2px; right: 2px; background: #d62839; color: #fff; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 12px; cursor: pointer; line-height: 1; }
+  .thumb-status { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(76,175,80,0.85); color: #fff; font-size: 9px; text-align: center; padding: 1px 0; }
+  .thumb-status.error { background: rgba(214,40,57,0.85); }
+  .batch-controls { display: none; gap: 8px; margin-top: 8px; }
+  .batch-controls.active { display: flex; }
+  .batch-review { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .batch-review.active { display: flex; }
+  .batch-review textarea { min-height: 120px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; line-height: 1.5; resize: vertical; font-family: inherit; }
+  .batch-progress-bar { height: 4px; background: #e0e0e0; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .batch-progress-fill { height: 100%; background: #4caf50; transition: width 0.3s; width: 0; border-radius: 2px; }
   .small { font-size: 11px; color: #999; margin-top: 4px; display: block; }
   .maplibregl-popup { max-width: 240px !important; }
   .maplibregl-popup-content { padding: 12px; border-radius: 8px; font-size: 13px; }
@@ -115,14 +125,32 @@
   <div class="panel-body">
     <div class="drop-wrap">
       <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <span class="hint">📷 拖拽截图到此处，或点击上传<br><span class="small">也支持 Ctrl+V 粘贴截图</span></span>
-        <button class="clear-btn" onclick="clearImage(event)" title="清除图片">×</button>
-        <img id="preview-img" style="display:none">
+        <span class="hint">📷 拖拽截图到此处，或点击上传<br><span class="small">支持多张截图 / Ctrl+V 多次粘贴</span></span>
+      </div>
+      <input type="file" id="file-input" accept="image/png,image/jpeg" multiple style="display:none" onchange="handleFileSelect(event)">
+      <div class="thumb-list" id="thumb-list"></div>
+      <div class="batch-controls" id="batch-controls">
+        <button class="btn" id="batch-ocr-btn" onclick="startBatchOCR()">🔍 开始批量识别</button>
+        <button class="btn" style="background:#999" onclick="clearBatch()">清空</button>
       </div>
       <div class="ocr-progress" id="ocr-progress">
-        <div class="spinner"></div> <span id="ocr-progress-text">正在识别截图文字…</span>
+        <div class="spinner"></div>
+        <div>
+          <span id="ocr-progress-text">正在识别截图文字…</span>
+          <div class="batch-progress-bar"><div class="batch-progress-fill" id="batch-progress-fill"></div></div>
+        </div>
       </div>
-      <input type="file" id="file-input" accept="image/png,image/jpeg" style="display:none" onchange="handleFileSelect(event)">
+      <div class="batch-review" id="batch-review">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <strong style="font-size:13px">📝 识别结果预览（可编辑校对）</strong>
+          <span style="font-size:11px;color:#999" id="review-stats"></span>
+        </div>
+        <textarea id="review-text"></textarea>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="confirm-btn" onclick="confirmBatchText()">✓ 确认，填入编辑器</button>
+          <button class="btn" style="background:#999" onclick="cancelReview()">取消</button>
+        </div>
+      </div>
     </div>
     <textarea id="text-input" placeholder='粘贴《绍宋》中的战役段落...
 
@@ -352,70 +380,99 @@ function showPopup(e) {
     .addTo(map);
 }
 
-// ─── 截图上传逻辑 ───
+// ─── 多截图批量处理 ───
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const ocrProgress = document.getElementById('ocr-progress');
 const ocrProgressText = document.getElementById('ocr-progress-text');
 
+let _imageBatch = [];  // [{blob, dataUrl}] - 已添加待识别的截图列表
+
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (file) processImage(file);
+  if (e.dataTransfer.files.length > 0) {
+    for (const file of e.dataTransfer.files) addToBatch(file);
+  }
 });
 
 document.addEventListener('paste', (e) => {
+  // 如果焦点在 textarea 中则不拦截粘贴
+  if (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT') return;
   const items = e.clipboardData?.items;
   if (!items) return;
   for (const item of items) {
     if (item.type.startsWith('image/')) {
       e.preventDefault();
-      processImage(item.getAsFile());
-      return;
+      addToBatch(item.getAsFile());
     }
   }
 });
 
 function handleFileSelect(e) {
-  const file = e.target.files[0];
-  if (file) processImage(file);
-}
-
-function clearImage(e) {
-  e.stopPropagation();
-  dropZone.classList.remove('has-image');
-  document.getElementById('preview-img').style.display = 'none';
+  for (const file of e.target.files) addToBatch(file);
   fileInput.value = '';
-  _ocrBlob = null;
 }
 
-let _ocrBlob = null;
-
-async function processImage(file) {
+async function addToBatch(file) {
   if (!file.type.match(/image\/(png|jpeg)/)) {
     showError('仅支持 PNG 和 JPEG 格式');
     return;
   }
+  if (_imageBatch.length >= 10) {
+    showError('每次最多添加 10 张截图');
+    return;
+  }
 
-  // 显示预览
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const img = document.getElementById('preview-img');
-    img.src = e.target.result;
-    img.style.display = 'block';
-    dropZone.classList.add('has-image');
-  };
-  reader.readAsDataURL(file);
+  const errorEl = document.getElementById('error-msg');
+  errorEl.style.display = 'none';
 
-  // 图片预处理：缩放到最长边 1920px
-  _ocrBlob = await resizeImage(file, 1920);
+  // 缩放并生成缩略图
+  const resized = await resizeImage(file, 1920);
+  const dataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.readAsDataURL(resized);
+  });
 
-  // 自动调用 OCR
-  await doOCR(_ocrBlob);
+  _imageBatch.push({ blob: resized, dataUrl });
+  renderThumbnails();
+}
+
+function removeFromBatch(index) {
+  _imageBatch.splice(index, 1);
+  renderThumbnails();
+}
+
+function renderThumbnails() {
+  const list = document.getElementById('thumb-list');
+  const controls = document.getElementById('batch-controls');
+
+  if (_imageBatch.length === 0) {
+    list.innerHTML = '';
+    controls.classList.remove('active');
+    return;
+  }
+
+  list.innerHTML = _imageBatch.map((item, i) =>
+    `<div class="thumb-item">
+      <img src="${item.dataUrl}" alt="截图${i + 1}">
+      <span class="thumb-idx">${i + 1}</span>
+      <button class="thumb-del" onclick="event.stopPropagation();removeFromBatch(${i})" title="删除">×</button>
+    </div>`
+  ).join('');
+  controls.classList.add('active');
+}
+
+function clearBatch() {
+  _imageBatch = [];
+  renderThumbnails();
+  document.getElementById('batch-review').classList.remove('active');
+  document.getElementById('error-msg').style.display = 'none';
+  ocrProgress.classList.remove('active');
 }
 
 async function resizeImage(file, maxDim) {
@@ -423,16 +480,12 @@ async function resizeImage(file, maxDim) {
     const img = new Image();
     img.onload = () => {
       let { width, height } = img;
-      if (width <= maxDim && height <= maxDim) {
-        resolve(file);
-        return;
-      }
+      if (width <= maxDim && height <= maxDim) { resolve(file); return; }
       const ratio = Math.min(maxDim / width, maxDim / height);
       width = Math.round(width * ratio);
       height = Math.round(height * ratio);
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
+      canvas.width = width; canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
       canvas.toBlob((blob) => resolve(blob), file.type, 0.85);
@@ -441,30 +494,101 @@ async function resizeImage(file, maxDim) {
   });
 }
 
-async function doOCR(blob) {
-  ocrProgress.classList.add('active');
-  ocrProgressText.textContent = '正在识别截图文字…';
+async function startBatchOCR() {
+  if (_imageBatch.length === 0) return;
   const errorEl = document.getElementById('error-msg');
   errorEl.style.display = 'none';
 
+  // 显示进度
+  ocrProgress.classList.add('active');
+  ocrProgressText.textContent = `正在识别第 1/${_imageBatch.length} 张截图…`;
+  document.getElementById('batch-progress-fill').style.width = '0%';
+  document.getElementById('batch-controls').classList.remove('active');
+  // 标记所有缩略图状态为等待
+  document.querySelectorAll('.thumb-status').forEach(el => el.remove());
+
   try {
     const formData = new FormData();
-    formData.append('file', blob, 'screenshot.png');
-    const resp = await fetch('/api/ocr', { method: 'POST', body: formData });
+    _imageBatch.forEach((item, i) => {
+      formData.append('files', item.blob, `screenshot_${i + 1}.png`);
+    });
 
+    const resp = await fetch('/api/ocr/batch', { method: 'POST', body: formData });
     if (!resp.ok) {
       const err = await resp.json();
-      throw new Error(err.detail || 'OCR 识别失败');
+      throw new Error(err.detail || '批量识别失败');
     }
 
-    const data = await resp.json();
-    document.getElementById('text-input').value = data.text;
-    ocrProgressText.textContent = `识别完成，共 ${data.text.length} 字，可校对后点击生成地图`;
-    setTimeout(() => { ocrProgress.classList.remove('active'); }, 2000);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let eventType = '', eventData = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) { eventType = line.slice(7); }
+        else if (line.startsWith('data: ')) {
+          eventData = line.slice(6);
+          if (eventType && eventData) {
+            try { handleBatchSSE(eventType, JSON.parse(eventData)); } catch (_) {}
+          }
+          eventType = ''; eventData = '';
+        }
+      }
+    }
   } catch (e) {
-    showError(e.message || 'OCR 识别失败，请重试');
+    showError(e.message || '批量识别失败，请重试');
     ocrProgress.classList.remove('active');
+    document.getElementById('batch-controls').classList.add('active');
   }
+}
+
+function handleBatchSSE(type, data) {
+  if (type === 'progress') {
+    const pct = Math.round((data.current / data.total) * 100);
+    ocrProgressText.textContent = `正在识别第 ${data.current}/${data.total} 张截图（${data.char_count} 字）…`;
+    document.getElementById('batch-progress-fill').style.width = pct + '%';
+
+    // 更新缩略图状态
+    const items = document.querySelectorAll('.thumb-item');
+    if (items[data.current - 1]) {
+      const status = document.createElement('div');
+      status.className = 'thumb-status';
+      status.textContent = '✓ ' + data.char_count + '字';
+      items[data.current - 1].appendChild(status);
+    }
+  } else if (type === 'merge') {
+    ocrProgressText.textContent = `去重拼接完成：${data.original_chars} → ${data.merged_chars} 字（去除 ${data.removed_dup} 字重复）`;
+  } else if (type === 'complete') {
+    ocrProgress.classList.remove('active');
+    // 显示确认区
+    document.getElementById('review-text').value = data.text;
+    document.getElementById('review-stats').textContent = `共 ${data.text.length} 字`;
+    document.getElementById('batch-review').classList.add('active');
+  } else if (type === 'error') {
+    showError(data.message || '批量识别失败');
+    ocrProgress.classList.remove('active');
+    document.getElementById('batch-controls').classList.add('active');
+  }
+}
+
+function confirmBatchText() {
+  const text = document.getElementById('review-text').value.trim();
+  if (!text) { showError('识别结果为空白，请重新截图'); return; }
+  document.getElementById('text-input').value = text;
+  document.getElementById('batch-review').classList.remove('active');
+  clearBatch();
+}
+
+function cancelReview() {
+  document.getElementById('batch-review').classList.remove('active');
+  document.getElementById('batch-controls').classList.add('active');
 }
 
 // ─── 状态 ───

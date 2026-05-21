@@ -30,6 +30,9 @@
   .legend { position: absolute; bottom: 20px; right: 20px; background: rgba(255,255,255,0.9); padding: 10px 14px; border-radius: 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10; }
   .legend-item { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend-divider { height: 1px; background: #ddd; margin: 6px 0; }
+  .legend-toggle { cursor: pointer; user-select: none; font-size: 11px; }
+  .legend-toggle input { margin: 0; cursor: pointer; }
   .drop-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 16px; text-align: center; color: #999; font-size: 13px; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
   .drop-zone:hover, .drop-zone.dragover { border-color: #e63946; background: #fff5f5; color: #e63946; }
   .drop-zone.has-image { border-style: solid; border-color: #4caf50; background: #f0faf0; color: #333; }
@@ -134,6 +137,15 @@
     <div class="legend-item"><span class="legend-dot" style="background:#155724"></span> CHGIS 精确匹配</div>
     <div class="legend-item"><span class="legend-dot" style="background:#856404"></span> LLM 推断坐标</div>
     <div class="legend-item"><span style="color:#e63946">━━━</span> 行军路线</div>
+    <div class="legend-divider"></div>
+    <label class="legend-item legend-toggle">
+      <input type="checkbox" id="toggle-ancient" checked onchange="toggleLayer('place-labels-ancient', this.checked)">
+      古地名
+    </label>
+    <label class="legend-item legend-toggle">
+      <input type="checkbox" id="toggle-modern" checked onchange="toggleLayer('place-labels-modern', this.checked)">
+      今地名对照
+    </label>
   </div>
 </div>
 
@@ -142,6 +154,7 @@ const map = new maplibregl.Map({
   container: 'map',
   style: {
     version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
     sources: {
       osm: {
         type: 'raster',
@@ -184,31 +197,45 @@ map.on('load', () => {
       'circle-radius': 8,
       'circle-color': '#856404',
       'circle-stroke-width': 2,
-      'circle-stroke-color': '#fff',
-      'circle-stroke-dasharray': [3, 2]
+      'circle-stroke-color': '#fff'
     }
   });
 
-  // 地名标签
+  // 古地名标签层
   map.addLayer({
-    id: 'place-labels',
+    id: 'place-labels-ancient',
     type: 'symbol',
     source: 'places',
     layout: {
-      'text-field': [
-        'case',
-        ['!=', ['get', 'modern_name'], ''],
-        ['format',
-          ['get', 'name'], { 'text-color': '#1a1a1a', 'text-font': ['bold'] },
-          '\n',
-          ['get', 'modern_name'], { 'text-color': '#888888', 'text-font': ['italic'] }
-        ],
-        ['get', 'name']
-      ],
+      'text-field': ['get', 'name'],
       'text-offset': [0, 1.5],
-      'text-size': 12
+      'text-size': 12,
+      'visibility': 'visible'
     },
-    paint: { 'text-color': '#333', 'text-halo-color': '#fff', 'text-halo-width': 2 }
+    paint: {
+      'text-color': '#1a1a1a',
+      'text-halo-color': '#fff',
+      'text-halo-width': 2
+    }
+  });
+
+  // 今地名标签层（仅显示有 modern_name 的）
+  map.addLayer({
+    id: 'place-labels-modern',
+    type: 'symbol',
+    source: 'places',
+    filter: ['!=', ['get', 'modern_name'], ''],
+    layout: {
+      'text-field': ['get', 'modern_name'],
+      'text-offset': [0, 2.8],
+      'text-size': 11,
+      'visibility': 'visible'
+    },
+    paint: {
+      'text-color': '#888888',
+      'text-halo-color': '#fff',
+      'text-halo-width': 2
+    }
   });
 
   // 行军路线
@@ -706,6 +733,12 @@ document.addEventListener('keydown', (e) => {
     document.getElementById('error-msg').style.display = 'none';
   }
 });
+
+// ─── 图层切换 ───
+
+function toggleLayer(layerId, visible) {
+  map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+}
 </script>
 </body>
 </html>

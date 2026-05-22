@@ -317,7 +317,7 @@ map.on('load', () => {
     paint: {
       'line-color': ['match', ['get', 'status'], 'engaging', '#ef4444', 'retreating', '#999', 'routing', '#ef4444', '#333'],
       'line-width': ['match', ['get', 'status'], 'engaging', 2.5, 'retreating', 1, 'routing', 1.5, 1.5],
-      'line-dasharray': ['match', ['get', 'status'], 'deploying', ['literal', [4,2]], 'retreating', ['literal', [2,4]], 'routing', ['literal', [2,2]], ['literal', [1,0]]],
+      'line-dasharray': [1, 0],
       'line-opacity': ['match', ['get', 'status'], 'deploying', 0.7, 'routing', 0.5, 0.9]
     }
   });
@@ -840,6 +840,13 @@ function updateMap(data) {
   applyTimelineFilters();
 }
 
+function _safeFilter(layerId, filter) {
+  if (map.getLayer(layerId)) { map.setFilter(layerId, filter); }
+}
+function _safeLayout(layerId, prop, val) {
+  if (map.getLayer(layerId)) { map.setLayoutProperty(layerId, prop, val); }
+}
+
 function applyTimelineFilters() {
   if (totalSteps === 0) {
     map.setFilter('places-chgis', null);
@@ -848,9 +855,9 @@ function applyTimelineFilters() {
     map.setFilter('places-llm-dim', ['==', ['get', 'step'], -1]);
     map.setFilter('route-lines', null);
     map.setFilter('route-arrows', null);
-    map.setFilter('unit-arrow-fill', null);
-    map.setFilter('unit-arrow-outline', null);
-    map.setFilter('unit-arrow-labels', null);
+    _safeFilter('unit-arrow-fill', null);
+    _safeFilter('unit-arrow-outline', null);
+    _safeFilter('unit-arrow-labels', null);
     return;
   }
   var activeFilter = ['any', ['<=', ['get', 'step'], currentStep], ['!', ['has', 'step']]];
@@ -861,10 +868,9 @@ function applyTimelineFilters() {
   map.setFilter('places-llm-dim', dimFilter);
   map.setFilter('route-lines', activeFilter);
   map.setFilter('route-arrows', activeFilter);
-  // 部队箭头：仅显示已触发的步骤，且状态非溃散
-  map.setFilter('unit-arrow-fill', ['all', ['<=', ['get', 'step'], currentStep], ['!=', ['get', 'status'], 'routing']]);
-  map.setFilter('unit-arrow-outline', ['<=', ['get', 'step'], currentStep]);
-  map.setFilter('unit-arrow-labels', ['all', ['<=', ['get', 'step'], currentStep], ['!=', ['get', 'status'], 'routing']]);
+  _safeFilter('unit-arrow-fill', ['all', ['<=', ['get', 'step'], currentStep], ['!=', ['get', 'status'], 'routing']]);
+  _safeFilter('unit-arrow-outline', ['<=', ['get', 'step'], currentStep]);
+  _safeFilter('unit-arrow-labels', ['all', ['<=', ['get', 'step'], currentStep], ['!=', ['get', 'status'], 'routing']]);
 }
 
 // ─── 键盘快捷键 ───
@@ -884,9 +890,9 @@ function toggleLayer(layerId, visible) { map.setLayoutProperty(layerId, 'visibil
 
 function toggleUnitLayers(visible) {
   var v = visible ? 'visible' : 'none';
-  map.setLayoutProperty('unit-arrow-fill', 'visibility', v);
-  map.setLayoutProperty('unit-arrow-outline', 'visibility', v);
-  map.setLayoutProperty('unit-arrow-labels', 'visibility', v);
+  _safeLayout('unit-arrow-fill', 'visibility', v);
+  _safeLayout('unit-arrow-outline', 'visibility', v);
+  _safeLayout('unit-arrow-labels', 'visibility', v);
 }
 
 function showUnitPopup(e) {

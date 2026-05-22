@@ -434,24 +434,24 @@ def _compute_unit_offsets(
     for u in units:
         dir_map[u.name] = _angle_for_direction(u.direction)
 
-    # 统计每个地点有多少部队（按最新状态）
-    location_units: dict[str, list[str]] = {}
+    # 统计每个坐标点有多少部队（按实际坐标分组，而非地名）
+    coord_units: dict[tuple[float, float], list[str]] = {}
     for us in unit_states:
         if us.location and us.location in coord_map:
-            loc = us.location
-            if loc not in location_units:
-                location_units[loc] = []
-            if us.unit_name not in location_units[loc]:
-                location_units[loc].append(us.unit_name)
+            coord = tuple(coord_map[us.location])
+            if coord not in coord_units:
+                coord_units[coord] = []
+            if us.unit_name not in coord_units[coord]:
+                coord_units[coord].append(us.unit_name)
 
     # 为每个部队计算偏移
     offsets: dict[str, list[float]] = {}
     arrow_spacing_m = 800 if scale == "tactical" else 3000 if scale == "battle" else 10000
 
-    for loc, unit_names in location_units.items():
+    for coord, unit_names in coord_units.items():
         if len(unit_names) <= 1:
             continue  # 不需要偏移
-        base = coord_map[loc]
+        base = list(coord)
         lat_rad = math.radians(base[1])
         deg_per_m_lng = 1.0 / (111320.0 * math.cos(lat_rad))
         deg_per_m_lat = 1.0 / 111320.0
@@ -464,8 +464,8 @@ def _compute_unit_offsets(
             offset_idx = (i - (len(unit_names) - 1) / 2) * 1.2
             offset_m = offset_idx * arrow_spacing_m
             offsets[uname] = [
-                base[0] + offset_m * math.cos(perp_rad) * deg_per_m_lng,
-                base[1] + offset_m * math.sin(perp_rad) * deg_per_m_lat,
+                offset_m * math.cos(perp_rad) * deg_per_m_lng,
+                offset_m * math.sin(perp_rad) * deg_per_m_lat,
             ]
 
     return offsets

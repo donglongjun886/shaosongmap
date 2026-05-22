@@ -10,7 +10,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; height: 100vh; display: flex; }
   .panel { width: 380px; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid #ddd; background: #fafafa; }
-  .panel-header { padding: 16px; background: #1a1a2e; color: #fff; font-size: 18px; font-weight: bold; }
+  .panel-header { padding: 16px; background: #1a1a2e; color: #fff; font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: space-between; }
   .panel-header small { font-size: 12px; opacity: 0.7; display: block; font-weight: normal; }
   .panel-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   textarea { flex: 1; min-height: 200px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; line-height: 1.6; resize: vertical; font-family: inherit; }
@@ -39,7 +39,6 @@
   .drop-wrap { position: relative; }
   .ocr-progress { display: none; align-items: center; gap: 8px; color: #666; font-size: 12px; margin-top: 8px; }
   .ocr-progress.active { display: flex; }
-  /* 缩略图列表 */
   .thumb-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .thumb-item { position: relative; width: 72px; height: 72px; border: 2px solid #e0e0e0; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
   .thumb-item img { width: 100%; height: 100%; object-fit: cover; }
@@ -62,7 +61,6 @@
   .loading.active { display: flex; }
   .spinner { width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #e63946; border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  /* 分阶段进度条 */
   .pipeline-progress { display: none; flex-direction: column; gap: 4px; padding: 8px 0; }
   .pipeline-progress.active { display: flex; }
   .pipeline-stage { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #999; }
@@ -74,7 +72,6 @@
   .pipeline-stage.error { color: #d62839; }
   .pipeline-stage.error .dot { background: #d62839; border-color: #d62839; }
   @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
-  /* 可编辑结果面板 */
   .editable-field { border: 1px solid transparent; border-radius: 4px; padding: 2px 4px; font-size: 13px; background: transparent; font-family: inherit; transition: border 0.2s; }
   .editable-field:hover { border-color: #ccc; background: #fff; }
   .editable-field:focus { border-color: #e63946; background: #fff; outline: none; }
@@ -87,7 +84,15 @@
   .render-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .render-btn.active { animation: glow 0.6s infinite alternate; }
   @keyframes glow { from { box-shadow: 0 0 4px #e63946; } to { box-shadow: 0 0 12px #e63946; } }
-  /* 时间轴 UI */
+  /* ── 模式切换 ── */
+  .input-only, .view-only { display: none; flex-direction: column; gap: 12px; }
+  body:not(.mode-view) .input-only { display: flex; }
+  body.mode-view .view-only { display: flex; }
+  .btn-back { padding: 6px 14px; background: none; border: 1px solid #ccc; color: #333; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+  .btn-back:hover { background: #f0f0f0; border-color: #999; }
+  .map-guide { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.55); color: #fff; padding: 14px 22px; border-radius: 8px; font-size: 14px; text-align: center; z-index: 5; pointer-events: none; transition: opacity 0.3s; }
+  .map-guide.hidden { opacity: 0; }
+  /* ── 时间轴 UI ── */
   .timeline-wrap { display: none; margin-top: 8px; }
   .timeline-wrap.active { display: block; }
   .timeline-bar { display: flex; align-items: center; gap: 0; padding: 8px 0; overflow-x: auto; }
@@ -113,93 +118,111 @@
   .event-card .event-desc { font-size: 13px; margin: 6px 0; color: #333; line-height: 1.5; }
   .event-card .event-meta { font-size: 11px; color: #666; }
   .event-card .event-meta span { margin-right: 8px; }
+  .panel-header-title { flex: 1; }
+  .panel-header .btn-back { color: #fff; border-color: rgba(255,255,255,0.4); display: none; }
+  body.mode-view .panel-header .btn-back { display: inline-block; }
+  body.mode-view .panel-header small { display: none; }
 </style>
 </head>
 <body>
 
 <div class="panel">
   <div class="panel-header">
-    ShaosongMap
-    <small>输入战役文本，生成古代地图</small>
+    <div class="panel-header-title">
+      ShaosongMap
+      <small>输入战役文本，生成古代地图</small>
+    </div>
+    <button class="btn-back view-only" onclick="switchToInputMode()">← 返回编辑</button>
   </div>
   <div class="panel-body">
-    <div class="drop-wrap">
-      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <span class="hint">📷 拖拽截图到此处，或点击上传<br><span class="small">支持多张截图 / Ctrl+V 多次粘贴</span></span>
-      </div>
-      <input type="file" id="file-input" accept="image/png,image/jpeg" multiple style="display:none" onchange="handleFileSelect(event)">
-      <div class="thumb-list" id="thumb-list"></div>
-      <div class="batch-controls" id="batch-controls">
-        <button class="btn" id="batch-ocr-btn" onclick="startBatchOCR()">🔍 开始批量识别</button>
-        <button class="btn" style="background:#999" onclick="clearBatch()">清空</button>
-      </div>
-      <div class="ocr-progress" id="ocr-progress">
-        <div class="spinner"></div>
-        <div>
-          <span id="ocr-progress-text">正在识别截图文字…</span>
-          <div class="batch-progress-bar"><div class="batch-progress-fill" id="batch-progress-fill"></div></div>
+
+    <!-- 输入模式 -->
+    <div class="input-section input-only">
+      <div class="drop-wrap">
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+          <span class="hint">📷 拖拽截图到此处，或点击上传<br><span class="small">支持多张截图 / Ctrl+V 多次粘贴</span></span>
+        </div>
+        <input type="file" id="file-input" accept="image/png,image/jpeg" multiple style="display:none" onchange="handleFileSelect(event)">
+        <div class="thumb-list" id="thumb-list"></div>
+        <div class="batch-controls" id="batch-controls">
+          <button class="btn" id="batch-ocr-btn" onclick="startBatchOCR()">🔍 开始批量识别</button>
+          <button class="btn" style="background:#999" onclick="clearBatch()">清空</button>
+        </div>
+        <div class="ocr-progress" id="ocr-progress">
+          <div class="spinner"></div>
+          <div>
+            <span id="ocr-progress-text">正在识别截图文字…</span>
+            <div class="batch-progress-bar"><div class="batch-progress-fill" id="batch-progress-fill"></div></div>
+          </div>
+        </div>
+        <div class="batch-review" id="batch-review">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <strong style="font-size:13px">📝 识别结果预览（可编辑校对）</strong>
+            <span style="font-size:11px;color:#999" id="review-stats"></span>
+          </div>
+          <textarea id="review-text"></textarea>
+          <div style="display:flex;gap:8px">
+            <button class="btn" id="confirm-btn" onclick="confirmBatchText()">✓ 确认，填入编辑器</button>
+            <button class="btn" style="background:#999" onclick="cancelReview()">取消</button>
+          </div>
         </div>
       </div>
-      <div class="batch-review" id="batch-review">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <strong style="font-size:13px">📝 识别结果预览（可编辑校对）</strong>
-          <span style="font-size:11px;color:#999" id="review-stats"></span>
-        </div>
-        <textarea id="review-text"></textarea>
-        <div style="display:flex;gap:8px">
-          <button class="btn" id="confirm-btn" onclick="confirmBatchText()">✓ 确认，填入编辑器</button>
-          <button class="btn" style="background:#999" onclick="cancelReview()">取消</button>
-        </div>
-      </div>
-    </div>
-    <textarea id="text-input" placeholder='粘贴《绍宋》中的战役段落...
+      <textarea id="text-input" placeholder='粘贴《绍宋》中的战役段落...
 
 示例：
 "岳飞率三万兵马自襄阳渡汉水，经唐州、邓州，直驱汴京。金军完颜宗弼以五万大军据守朱仙镇..."'></textarea>
-    <div class="row">
-      <select id="dynasty-select">
-        <option value="">自动推断朝代</option>
-        <option value="北宋">北宋 (960-1127)</option>
-        <option value="南宋">南宋 (1127-1279)</option>
-        <option value="宋">宋朝 (960-1279)</option>
-        <option value="唐">唐朝 (618-907)</option>
-        <option value="明">明朝 (1368-1644)</option>
-      </select>
-      <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap">
-        <input type="checkbox" id="mode-timeline" style="margin:0;cursor:pointer"> 时间轴模式
-      </label>
-      <button class="btn" id="submit-btn" onclick="analyze()">生成地图</button>
-    </div>
-    <div class="pipeline-progress" id="pipeline-progress">
-      <div class="pipeline-stage" id="stage-extract"><span class="dot"></span> 提取结构数据</div>
-      <div class="pipeline-stage" id="stage-geocode"><span class="dot"></span> 匹配古地名</div>
-      <div class="pipeline-stage" id="stage-render"><span class="dot"></span> 渲染地图</div>
-    </div>
-    <div class="error" id="error-msg" style="display:none"></div>
-    <div class="result-section" id="result-panel" style="display:none">
-      <div class="timeline-wrap" id="timeline-wrap">
-        <div class="timeline-bar" id="timeline-bar"></div>
-        <div class="step-controls">
-          <button class="step-btn" id="btn-prev" onclick="stepTo(currentStep - 1)">◀ 上一步</button>
-          <span class="step-indicator" id="step-indicator">● 1/1</span>
-          <button class="step-btn" id="btn-next" onclick="stepTo(currentStep + 1)">下一步 ▶</button>
-        </div>
-        <div class="event-card" id="event-card" style="display:none"></div>
+      <div class="row">
+        <select id="dynasty-select">
+          <option value="">自动推断朝代</option>
+          <option value="北宋">北宋 (960-1127)</option>
+          <option value="南宋">南宋 (1127-1279)</option>
+          <option value="宋">宋朝 (960-1279)</option>
+          <option value="唐">唐朝 (618-907)</option>
+          <option value="明">明朝 (1368-1644)</option>
+        </select>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="mode-timeline" style="margin:0;cursor:pointer"> 时间轴模式
+        </label>
+        <button class="btn" id="submit-btn" onclick="analyze()">生成地图</button>
       </div>
-      <h3>📋 提取结果 <span style="font-weight:normal;font-size:11px;color:#999">(可编辑后重新渲染)</span></h3>
-      <div id="campaign-info"></div>
-      <div id="scale-indicator" style="font-size:12px;color:#666;margin-bottom:8px"></div>
-      <h3 style="margin-top:12px">📍 地名坐标</h3>
-      <div id="places-list"></div>
-      <h3 style="margin-top:12px">🛤️ 行军路线</h3>
-      <div id="routes-list"></div>
-      <button class="render-btn" id="render-btn" disabled onclick="reRender()">🔄 重新渲染</button>
+      <div class="pipeline-progress" id="pipeline-progress">
+        <div class="pipeline-stage" id="stage-extract"><span class="dot"></span> 提取结构数据</div>
+        <div class="pipeline-stage" id="stage-geocode"><span class="dot"></span> 匹配古地名</div>
+        <div class="pipeline-stage" id="stage-render"><span class="dot"></span> 渲染地图</div>
+      </div>
+      <div class="error" id="error-msg-input" style="display:none"></div>
     </div>
+
+    <!-- 查看模式 -->
+    <div class="view-section view-only">
+      <div id="scale-indicator" style="font-size:12px;color:#666"></div>
+      <div class="error" id="error-msg-view" style="display:none"></div>
+      <div class="result-section" id="result-panel">
+        <div class="timeline-wrap" id="timeline-wrap">
+          <div class="timeline-bar" id="timeline-bar"></div>
+          <div class="step-controls">
+            <button class="step-btn" id="btn-prev" onclick="stepTo(currentStep - 1)">◀ 上一步</button>
+            <span class="step-indicator" id="step-indicator">● 1/1</span>
+            <button class="step-btn" id="btn-next" onclick="stepTo(currentStep + 1)">下一步 ▶</button>
+          </div>
+          <div class="event-card" id="event-card" style="display:none"></div>
+        </div>
+        <h3>📋 提取结果 <span style="font-weight:normal;font-size:11px;color:#999">(可编辑后重新渲染)</span></h3>
+        <div id="campaign-info"></div>
+        <h3 style="margin-top:12px">📍 地名坐标</h3>
+        <div id="places-list"></div>
+        <h3 style="margin-top:12px">🛤️ 行军路线</h3>
+        <div id="routes-list"></div>
+        <button class="render-btn" id="render-btn" disabled onclick="reRender()">🔄 重新渲染</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <div class="map-wrap">
   <div id="map"></div>
+  <div class="map-guide" id="map-guide">输入文本或上传截图，生成战役地图</div>
   <div class="legend">
     <div class="legend-item"><span class="legend-dot" style="background:#155724"></span> CHGIS 精确匹配</div>
     <div class="legend-item"><span class="legend-dot" style="background:#856404"></span> LLM 推断坐标</div>
@@ -240,131 +263,49 @@ map.on('load', () => {
   map.addSource('places', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
-  // 地名标记层：CHGIS 精确匹配
   map.addLayer({
-    id: 'places-chgis',
-    type: 'circle',
-    source: 'places',
+    id: 'places-chgis', type: 'circle', source: 'places',
     filter: ['==', ['get', 'source'], 'chgis'],
-    paint: {
-      'circle-radius': 8,
-      'circle-color': '#155724',
-      'circle-stroke-width': 2,
-      'circle-stroke-color': '#fff'
-    }
+    paint: { 'circle-radius': 8, 'circle-color': '#155724', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
   });
-
-  // 地名标记层：LLM 推断
   map.addLayer({
-    id: 'places-llm',
-    type: 'circle',
-    source: 'places',
+    id: 'places-llm', type: 'circle', source: 'places',
     filter: ['==', ['get', 'source'], 'llm_infer'],
-    paint: {
-      'circle-radius': 8,
-      'circle-color': '#856404',
-      'circle-stroke-width': 2,
-      'circle-stroke-color': '#fff'
-    }
+    paint: { 'circle-radius': 8, 'circle-color': '#856404', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
   });
-
-  // 古地名标签层
   map.addLayer({
-    id: 'place-labels-ancient',
-    type: 'symbol',
-    source: 'places',
-    layout: {
-      'text-field': ['get', 'name'],
-      'text-offset': [0, 1.5],
-      'text-size': 12,
-      'visibility': 'visible'
-    },
-    paint: {
-      'text-color': '#1a1a1a',
-      'text-halo-color': '#fff',
-      'text-halo-width': 2
-    }
+    id: 'place-labels-ancient', type: 'symbol', source: 'places',
+    layout: { 'text-field': ['get', 'name'], 'text-offset': [0, 1.5], 'text-size': 12, 'visibility': 'visible' },
+    paint: { 'text-color': '#1a1a1a', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
-
-  // 今地名标签层（仅显示有 modern_name 的）
   map.addLayer({
-    id: 'place-labels-modern',
-    type: 'symbol',
-    source: 'places',
+    id: 'place-labels-modern', type: 'symbol', source: 'places',
     filter: ['!=', ['get', 'modern_name'], ''],
-    layout: {
-      'text-field': ['get', 'modern_name'],
-      'text-offset': [0, 2.8],
-      'text-size': 11,
-      'visibility': 'visible'
-    },
-    paint: {
-      'text-color': '#888888',
-      'text-halo-color': '#fff',
-      'text-halo-width': 2
-    }
+    layout: { 'text-field': ['get', 'modern_name'], 'text-offset': [0, 2.8], 'text-size': 11, 'visibility': 'visible' },
+    paint: { 'text-color': '#888888', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
-
-  // 行军路线
   map.addLayer({
-    id: 'route-lines',
-    type: 'line',
-    source: 'routes',
-    paint: {
-      'line-color': '#e63946',
-      'line-width': 3,
-      'line-opacity': 0.8
-    }
+    id: 'route-lines', type: 'line', source: 'routes',
+    paint: { 'line-color': '#e63946', 'line-width': 3, 'line-opacity': 0.8 }
   });
-
-  // 路线箭头
   map.addLayer({
-    id: 'route-arrows',
-    type: 'symbol',
-    source: 'routes',
-    layout: {
-      'symbol-placement': 'line',
-      'symbol-spacing': 120,
-      'text-field': '▶',
-      'text-size': 14
-    },
+    id: 'route-arrows', type: 'symbol', source: 'routes',
+    layout: { 'symbol-placement': 'line', 'symbol-spacing': 120, 'text-field': '▶', 'text-size': 14 },
     paint: { 'text-color': '#e63946' }
   });
-
-  // 时间轴模式：未激活地名的灰色淡化层
   map.addLayer({
-    id: 'places-chgis-dim',
-    type: 'circle',
-    source: 'places',
+    id: 'places-chgis-dim', type: 'circle', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    paint: {
-      'circle-radius': 5,
-      'circle-color': '#aaaaaa',
-      'circle-opacity': 0.35,
-      'circle-stroke-width': 1,
-      'circle-stroke-color': '#ddd'
-    }
+    paint: { 'circle-radius': 5, 'circle-color': '#aaaaaa', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
+  });
+  map.addLayer({
+    id: 'places-llm-dim', type: 'circle', source: 'places',
+    filter: ['==', ['get', 'step'], -1],
+    paint: { 'circle-radius': 5, 'circle-color': '#bbbbbb', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
   });
 
-  map.addLayer({
-    id: 'places-llm-dim',
-    type: 'circle',
-    source: 'places',
-    filter: ['==', ['get', 'step'], -1],
-    paint: {
-      'circle-radius': 5,
-      'circle-color': '#bbbbbb',
-      'circle-opacity': 0.35,
-      'circle-stroke-width': 1,
-      'circle-stroke-color': '#ddd'
-    }
-  });
-
-  // 点击弹窗
   map.on('click', 'places-chgis', (e) => showPopup(e));
   map.on('click', 'places-llm', (e) => showPopup(e));
-
-  // 鼠标样式
   map.on('mouseenter', 'places-chgis', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'places-chgis', () => { map.getCanvas().style.cursor = ''; });
   map.on('mouseenter', 'places-llm', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -381,6 +322,24 @@ function showPopup(e) {
     .addTo(map);
 }
 
+// ─── 模式切换 ───
+
+function switchToViewMode() {
+  document.body.classList.add('mode-view');
+  document.getElementById('map-guide').classList.add('hidden');
+  document.getElementById('error-msg-view').style.display = 'none';
+}
+
+function switchToInputMode() {
+  document.body.classList.remove('mode-view');
+  document.getElementById('map-guide').classList.remove('hidden');
+  document.getElementById('error-msg-input').style.display = 'none';
+  // 如果有数据，地图回到引导态
+  if (_lastExtractData) {
+    map.flyTo({ center: [112, 33], zoom: 5 });
+  }
+}
+
 // ─── 多截图批量处理 ───
 
 const dropZone = document.getElementById('drop-zone');
@@ -388,7 +347,7 @@ const fileInput = document.getElementById('file-input');
 const ocrProgress = document.getElementById('ocr-progress');
 const ocrProgressText = document.getElementById('ocr-progress-text');
 
-let _imageBatch = [];  // [{blob, dataUrl}] - 已添加待识别的截图列表
+let _imageBatch = [];
 
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
@@ -401,7 +360,6 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 document.addEventListener('paste', (e) => {
-  // 如果焦点在 textarea 中则不拦截粘贴
   if (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT') return;
   const items = e.clipboardData?.items;
   if (!items) return;
@@ -419,45 +377,26 @@ function handleFileSelect(e) {
 }
 
 async function addToBatch(file) {
-  if (!file.type.match(/image\/(png|jpeg)/)) {
-    showError('仅支持 PNG 和 JPEG 格式');
-    return;
-  }
-  if (_imageBatch.length >= 10) {
-    showError('每次最多添加 10 张截图');
-    return;
-  }
-
-  const errorEl = document.getElementById('error-msg');
+  if (!file.type.match(/image\/(png|jpeg)/)) { showError('仅支持 PNG 和 JPEG 格式'); return; }
+  if (_imageBatch.length >= 10) { showError('每次最多添加 10 张截图'); return; }
+  var errorEl = document.getElementById('error-msg-input');
   errorEl.style.display = 'none';
-
-  // 缩放并生成缩略图
   const resized = await resizeImage(file, 1920);
   const dataUrl = await new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => resolve(e.target.result);
     reader.readAsDataURL(resized);
   });
-
   _imageBatch.push({ blob: resized, dataUrl });
   renderThumbnails();
 }
 
-function removeFromBatch(index) {
-  _imageBatch.splice(index, 1);
-  renderThumbnails();
-}
+function removeFromBatch(index) { _imageBatch.splice(index, 1); renderThumbnails(); }
 
 function renderThumbnails() {
   const list = document.getElementById('thumb-list');
   const controls = document.getElementById('batch-controls');
-
-  if (_imageBatch.length === 0) {
-    list.innerHTML = '';
-    controls.classList.remove('active');
-    return;
-  }
-
+  if (_imageBatch.length === 0) { list.innerHTML = ''; controls.classList.remove('active'); return; }
   list.innerHTML = _imageBatch.map((item, i) =>
     `<div class="thumb-item">
       <img src="${item.dataUrl}" alt="截图${i + 1}">
@@ -472,7 +411,7 @@ function clearBatch() {
   _imageBatch = [];
   renderThumbnails();
   document.getElementById('batch-review').classList.remove('active');
-  document.getElementById('error-msg').style.display = 'none';
+  document.getElementById('error-msg-input').style.display = 'none';
   ocrProgress.classList.remove('active');
 }
 
@@ -497,48 +436,33 @@ async function resizeImage(file, maxDim) {
 
 async function startBatchOCR() {
   if (_imageBatch.length === 0) return;
-  const errorEl = document.getElementById('error-msg');
+  var errorEl = document.getElementById('error-msg-input');
   errorEl.style.display = 'none';
-
-  // 显示进度
   ocrProgress.classList.add('active');
   ocrProgressText.textContent = `正在识别第 1/${_imageBatch.length} 张截图…`;
   document.getElementById('batch-progress-fill').style.width = '0%';
   document.getElementById('batch-controls').classList.remove('active');
-  // 标记所有缩略图状态为等待
   document.querySelectorAll('.thumb-status').forEach(el => el.remove());
-
   try {
     const formData = new FormData();
-    _imageBatch.forEach((item, i) => {
-      formData.append('files', item.blob, `screenshot_${i + 1}.png`);
-    });
-
+    _imageBatch.forEach((item, i) => formData.append('files', item.blob, `screenshot_${i + 1}.png`));
     const resp = await fetch('/api/ocr/batch', { method: 'POST', body: formData });
-    if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.detail || '批量识别失败');
-    }
-
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '批量识别失败'); }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-
       let eventType = '', eventData = '';
       for (const line of lines) {
         if (line.startsWith('event: ')) { eventType = line.slice(7); }
         else if (line.startsWith('data: ')) {
           eventData = line.slice(6);
-          if (eventType && eventData) {
-            try { handleBatchSSE(eventType, JSON.parse(eventData)); } catch (_) {}
-          }
+          if (eventType && eventData) { try { handleBatchSSE(eventType, JSON.parse(eventData)); } catch (_) {} }
           eventType = ''; eventData = '';
         }
       }
@@ -555,8 +479,6 @@ function handleBatchSSE(type, data) {
     const pct = Math.round((data.current / data.total) * 100);
     ocrProgressText.textContent = `正在识别第 ${data.current}/${data.total} 张截图（${data.char_count} 字）…`;
     document.getElementById('batch-progress-fill').style.width = pct + '%';
-
-    // 更新缩略图状态
     const items = document.querySelectorAll('.thumb-item');
     if (items[data.current - 1]) {
       const status = document.createElement('div');
@@ -568,7 +490,6 @@ function handleBatchSSE(type, data) {
     ocrProgressText.textContent = `去重拼接完成：${data.original_chars} → ${data.merged_chars} 字（去除 ${data.removed_dup} 字重复）`;
   } else if (type === 'complete') {
     ocrProgress.classList.remove('active');
-    // 显示确认区
     document.getElementById('review-text').value = data.text;
     document.getElementById('review-stats').textContent = `共 ${data.text.length} 字`;
     document.getElementById('batch-review').classList.add('active');
@@ -594,16 +515,21 @@ function cancelReview() {
 
 // ─── 状态 ───
 
-let _lastExtractData = null;  // 最后一次提取的完整数据，供编辑后重新渲染
-let _dataModified = false;    // 用户是否修改了数据
-
-// ─── 时间轴状态 ───
-
+let _lastExtractData = null;
+let _dataModified = false;
 let currentStep = 1;
 let totalSteps = 0;
 let _events = [];
 
-// ─── 分阶段进度条 ───
+// ─── 通用 error & 分阶段进度条 ───
+
+function showError(msg) {
+  // 两个模式下各有一个 error 元素，根据当前模式设置
+  var id = document.body.classList.contains('mode-view') ? 'error-msg-view' : 'error-msg-input';
+  var el = document.getElementById(id);
+  el.textContent = '⚠️ ' + msg;
+  el.style.display = 'block';
+}
 
 const STAGES = ['extract', 'geocode', 'render'];
 
@@ -630,16 +556,11 @@ function setStageState(stage, state) {
 
 async function analyze() {
   const text = document.getElementById('text-input').value.trim();
-  if (!text) {
-    showError('请输入战役文本或上传截图');
-    return;
-  }
-
+  if (!text) { showError('请输入战役文本或上传截图'); return; }
   const submitBtn = document.getElementById('submit-btn');
-  const errorEl = document.getElementById('error-msg');
   submitBtn.disabled = true;
-  errorEl.style.display = 'none';
-  document.getElementById('result-panel').style.display = 'none';
+  document.getElementById('error-msg-input').style.display = 'none';
+  document.getElementById('result-panel').style.display = 'block';
   resetProgress();
 
   const dynasty = document.getElementById('dynasty-select').value;
@@ -647,44 +568,28 @@ async function analyze() {
 
   try {
     const resp = await fetch('/api/extract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, dynasty: dynasty || null, mode: mode })
     });
-
-    if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.detail || `请求失败 (${resp.status})`);
-    }
-
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || `请求失败 (${resp.status})`); }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-
-      // 解析 SSE 事件
       const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // 保留未完成的行
-
-      let eventType = '';
-      let eventData = '';
+      buffer = lines.pop() || '';
+      let eventType = '', eventData = '';
       for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          eventType = line.slice(7);
-        } else if (line.startsWith('data: ')) {
+        if (line.startsWith('event: ')) { eventType = line.slice(7); }
+        else if (line.startsWith('data: ')) {
           eventData = line.slice(6);
           if (eventType === 'progress' || eventType === 'result' || eventType === 'error') {
-            try {
-              const data = JSON.parse(eventData);
-              handleSSEEvent(eventType, data);
-            } catch (_) {}
+            try { const data = JSON.parse(eventData); handleSSEEvent(eventType, data); } catch (_) {}
           }
-          eventType = '';
-          eventData = '';
+          eventType = ''; eventData = '';
         }
       }
     }
@@ -702,12 +607,9 @@ async function analyze() {
 function handleSSEEvent(type, data) {
   if (type === 'progress') {
     setStageState(data.stage, 'ok' in data && !data.ok ? 'error' : 'done');
-    // 设置下一个阶段为 active
     const stageOrder = {'extract_done': 'extract', 'geocode_done': 'geocode', 'render_done': 'render'};
     const idx = STAGES.indexOf(stageOrder[data.stage]);
-    if (idx >= 0 && idx + 1 < STAGES.length) {
-      setStageState(STAGES[idx + 1], 'active');
-    }
+    if (idx >= 0 && idx + 1 < STAGES.length) { setStageState(STAGES[idx + 1], 'active'); }
   } else if (type === 'error') {
     const stageMap = {extract: 'extract', geocode: 'geocode', render: 'render'};
     const stage = stageMap[data.stage] || 'extract';
@@ -717,14 +619,12 @@ function handleSSEEvent(type, data) {
     setStageState('render', 'done');
     _lastExtractData = data;
     _dataModified = false;
-    // 显示尺度标签
     const scaleLabels = { tactical: '⚔️ 战术级 (1-10km)', battle: '🏴 战役级 (20-200km)', strategic: '🗺️ 战略级 (200-1000km)' };
     document.getElementById('scale-indicator').textContent = scaleLabels[data.scale] || '';
-    // Timeline mode
     if (data.events && data.events.length > 0) {
       _events = data.events;
       totalSteps = data.total_steps || data.events.length;
-      currentStep = totalSteps; // 初始显示完整地图
+      currentStep = totalSteps;
       renderTimeline();
       document.getElementById('timeline-wrap').classList.add('active');
     } else {
@@ -734,29 +634,22 @@ function handleSSEEvent(type, data) {
     }
     renderEditableResult(data);
     updateMap(data);
+    // 自动切换到查看模式
+    switchToViewMode();
   }
-}
-
-function showError(msg) {
-  const el = document.getElementById('error-msg');
-  el.textContent = '⚠️ ' + msg;
-  el.style.display = 'block';
 }
 
 // ─── 可编辑结果面板 ───
 
 function renderEditableResult(data) {
-  document.getElementById('result-panel').style.display = 'block';
   const renderBtn = document.getElementById('render-btn');
   renderBtn.disabled = true;
   renderBtn.classList.remove('active');
 
-  // 战役名
   const nameHtml = data.campaign_name
     ? `<strong>战役名:</strong> <input class="editable-field" id="edit-name" value="${escHtml(data.campaign_name)}" oninput="markModified()">`
     : `<strong>战役名:</strong> <input class="editable-field" id="edit-name" placeholder="未命名" oninput="markModified()">`;
 
-  // 阵营
   let factionsHtml = '';
   data.factions.forEach((f, fi) => {
     const commanders = f.commanders.map((c, ci) =>
@@ -765,7 +658,6 @@ function renderEditableResult(data) {
     factionsHtml += `<div style="margin:4px 0"><strong>${escHtml(f.name)}:</strong> 将领: ${commanders}<button class="add-btn" onclick="addCommander(${fi})">+将领</button> 兵力: <input class="editable-field" id="edit-troops-${fi}" value="${escHtml(f.troops || '')}" placeholder="未知" oninput="markModified()"></div>`;
   });
 
-  // 地名
   let placesHtml = data.features.map((f, i) => {
     const tagClass = f.source === 'chgis' ? 'tag-chgis' : f.source === 'llm_infer' ? 'tag-llm' : 'tag-unknown';
     const coords = f.lng ? ` (${f.lng.toFixed(2)}, ${f.lat.toFixed(2)})` : '';
@@ -773,7 +665,6 @@ function renderEditableResult(data) {
   }).join(' ');
   placesHtml += ` <button class="add-btn" onclick="addPlace()">+地名</button>`;
 
-  // 路线
   let routesHtml = '';
   data.routes.forEach((r, i) => {
     routesHtml += `<div style="margin:2px 0">📌 <input class="editable-field" id="edit-route-from-${i}" value="${escHtml(r.from_place)}" style="width:60px" oninput="markModified()"> → <input class="editable-field" id="edit-route-to-${i}" value="${escHtml(r.to_place)}" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="delRoute(${i})" title="删除路线">×</button></div>`;
@@ -798,55 +689,32 @@ function markModified() {
 function collectModifiedData() {
   const name = document.getElementById('edit-name')?.value || '';
   const data = { campaign_name: name || null, factions: [], places: [], routes: [], dynasty: document.getElementById('dynasty-select').value || null, scale: _lastExtractData?.scale || null };
-
-  // 收集阵营
   if (_lastExtractData) {
     _lastExtractData.factions.forEach((f, fi) => {
       const commanders = [];
       let ci = 0;
-      while (true) {
-        const el = document.getElementById(`edit-cmd-${fi}-${ci}`);
-        if (!el) break;
-        const v = el.value.trim();
-        if (v) commanders.push(v);
-        ci++;
-      }
+      while (true) { const el = document.getElementById(`edit-cmd-${fi}-${ci}`); if (!el) break; const v = el.value.trim(); if (v) commanders.push(v); ci++; }
       const troopsEl = document.getElementById(`edit-troops-${fi}`);
       data.factions.push({ name: f.name, commanders, troops: troopsEl?.value.trim() || null });
     });
   }
-
-  // 收集地名
   let pi = 0;
-  while (true) {
-    const el = document.getElementById(`edit-place-${pi}`);
-    if (!el) break;
-    const v = el.value.trim();
-    if (v) data.places.push({ name: v, context: '' });
-    pi++;
-  }
-
-  // 收集路线
+  while (true) { const el = document.getElementById(`edit-place-${pi}`); if (!el) break; const v = el.value.trim(); if (v) data.places.push({ name: v, context: '' }); pi++; }
   let ri = 0;
   while (true) {
     const fromEl = document.getElementById(`edit-route-from-${ri}`);
     const toEl = document.getElementById(`edit-route-to-${ri}`);
     if (!fromEl || !toEl) break;
-    const from = fromEl.value.trim();
-    const to = toEl.value.trim();
+    const from = fromEl.value.trim(); const to = toEl.value.trim();
     if (from && to) data.routes.push({ from, to, via: [] });
     ri++;
   }
-
   return data;
 }
 
 // ─── 编辑操作 ───
 
-function delPlace(i) {
-  const el = document.getElementById(`edit-place-${i}`);
-  if (el) { el.closest('.tag')?.remove(); markModified(); }
-}
+function delPlace(i) { const el = document.getElementById(`edit-place-${i}`); if (el) { el.closest('.tag')?.remove(); markModified(); } }
 function addPlace() {
   const container = document.getElementById('places-list');
   const btn = container.querySelector('.add-btn');
@@ -857,10 +725,7 @@ function addPlace() {
   btn.before(span);
   markModified();
 }
-function delCommander(fi, ci) {
-  const el = document.getElementById(`edit-cmd-${fi}-${ci}`);
-  if (el) { el.previousElementSibling?.remove(); el.nextElementSibling?.remove(); el.remove(); markModified(); }
-}
+function delCommander(fi, ci) { const el = document.getElementById(`edit-cmd-${fi}-${ci}`); if (el) { el.previousElementSibling?.remove(); el.nextElementSibling?.remove(); el.remove(); markModified(); } }
 function addCommander(fi) {
   let ci = 0;
   while (document.getElementById(`edit-cmd-${fi}-${ci}`)) ci++;
@@ -870,11 +735,7 @@ function addCommander(fi) {
   parent.querySelector('.add-btn').before(span);
   markModified();
 }
-function delRoute(i) {
-  const fromEl = document.getElementById(`edit-route-from-${i}`);
-  if (fromEl) fromEl.closest('div').remove();
-  markModified();
-}
+function delRoute(i) { const fromEl = document.getElementById(`edit-route-from-${i}`); if (fromEl) fromEl.closest('div').remove(); markModified(); }
 function addRoute() {
   const container = document.getElementById('routes-list');
   let ri = container.querySelectorAll('[id^="edit-route-from-"]').length;
@@ -894,21 +755,12 @@ async function reRender() {
   btn.disabled = true;
   btn.classList.remove('active');
   btn.textContent = '⏳ 重新渲染中...';
-
   try {
-    const resp = await fetch('/api/render', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.detail || '渲染失败');
-    }
+    const resp = await fetch('/api/render', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || '渲染失败'); }
     const result = await resp.json();
     _lastExtractData = result;
     _dataModified = false;
-    // 重新渲染不支持时间轴，清除时间轴状态
     _events = [];
     totalSteps = 0;
     document.getElementById('timeline-wrap').classList.remove('active');
@@ -942,7 +794,6 @@ function updateMap(data) {
 
 function applyTimelineFilters() {
   if (totalSteps === 0) {
-    // 非 timeline 模式：清除所有 filter，显示全部
     map.setFilter('places-chgis', null);
     map.setFilter('places-llm', null);
     map.setFilter('places-chgis-dim', ['==', ['get', 'step'], -1]);
@@ -951,15 +802,12 @@ function applyTimelineFilters() {
     map.setFilter('route-arrows', null);
     return;
   }
-  // Timeline 模式：活动层显示 step <= currentStep 或无 step 的要素
   var activeFilter = ['any', ['<=', ['get', 'step'], currentStep], ['!', ['has', 'step']]];
   map.setFilter('places-chgis', activeFilter);
   map.setFilter('places-llm', activeFilter);
-  // 淡化层显示 step > currentStep 的要素
   var dimFilter = ['>', ['get', 'step'], currentStep];
   map.setFilter('places-chgis-dim', dimFilter);
   map.setFilter('places-llm-dim', dimFilter);
-  // 路线过滤
   map.setFilter('route-lines', activeFilter);
   map.setFilter('route-arrows', activeFilter);
 }
@@ -967,23 +815,17 @@ function applyTimelineFilters() {
 // ─── 键盘快捷键 ───
 
 document.addEventListener('keydown', (e) => {
-  // Ctrl+Enter / Cmd+Enter 提交
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    e.preventDefault();
-    analyze();
-  }
-  // Esc 关闭 popup / 错误提示
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); analyze(); }
   if (e.key === 'Escape') {
     document.querySelectorAll('.maplibregl-popup').forEach(p => p.remove());
-    document.getElementById('error-msg').style.display = 'none';
+    document.getElementById('error-msg-input').style.display = 'none';
+    document.getElementById('error-msg-view').style.display = 'none';
   }
 });
 
 // ─── 图层切换 ───
 
-function toggleLayer(layerId, visible) {
-  map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
-}
+function toggleLayer(layerId, visible) { map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none'); }
 
 // ─── 时间轴交互 ───
 
@@ -1000,10 +842,7 @@ function renderTimeline() {
   var bar = document.getElementById('timeline-bar');
   var html = '';
   for (var i = 1; i <= totalSteps; i++) {
-    if (i > 1) {
-      var lineClass = (i <= currentStep) ? 'timeline-line done' : 'timeline-line';
-      html += '<div class="' + lineClass + '"></div>';
-    }
+    if (i > 1) { var lineClass = (i <= currentStep) ? 'timeline-line done' : 'timeline-line'; html += '<div class="' + lineClass + '"></div>'; }
     var nodeClass = 'timeline-node';
     if (i < currentStep) nodeClass += ' done';
     else if (i === currentStep) nodeClass += ' current';
@@ -1027,9 +866,7 @@ function updateTimelineBar() {
     else if (step === currentStep) node.classList.add('current');
     else node.classList.add('pending');
   });
-  lines.forEach(function(line, i) {
-    line.classList.toggle('done', (i + 1) < currentStep);
-  });
+  lines.forEach(function(line, i) { line.classList.toggle('done', (i + 1) < currentStep); });
 }
 
 function updateStepButtons() {
@@ -1040,10 +877,7 @@ function updateStepButtons() {
 
 function renderEventCard(step) {
   var card = document.getElementById('event-card');
-  if (!_events || step < 1 || step > _events.length) {
-    card.style.display = 'none';
-    return;
-  }
+  if (!_events || step < 1 || step > _events.length) { card.style.display = 'none'; return; }
   card.style.display = 'block';
   var ev = _events[step - 1];
   var typeLabels = {march: '行军', battle: '战斗', encamp: '扎营', retreat: '撤退'};
@@ -1056,7 +890,6 @@ function renderEventCard(step) {
     '<div class="event-meta">' + actorsHtml + placesHtml + '</div>';
 }
 
-// 键盘左右箭头切换步骤
 document.addEventListener('keydown', function(e) {
   if (totalSteps === 0) return;
   if (e.key === 'ArrowLeft') { e.preventDefault(); stepTo(currentStep - 1); }

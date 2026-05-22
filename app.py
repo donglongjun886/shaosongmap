@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -17,12 +18,25 @@ from pydantic import BaseModel, Field
 from shaosongmap.extractor import extract, extract_timeline
 from shaosongmap.geocoder import geocode
 from shaosongmap.models import CampaignExtract, CampaignMap, CampaignTimeline, GeoFeature, RouteLine, TimelineEvent
-from shaosongmap.ocr import merge_texts, ocr_main
+from shaosongmap.ocr import _get_ocr, merge_texts, ocr_main
+
+logger = logging.getLogger("shaosongmap")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """应用生命周期：启动时预加载 PaddleOCR 模型。"""
+    logger.info("正在预加载 PaddleOCR 模型...")
+    _get_ocr()
+    logger.info("PaddleOCR 模型预热完成")
+    yield
+
 
 app = FastAPI(
     title="ShaosongMap",
     description="让历史小说读者「边读边看地图」——输入战役段落，生成古代地图",
     version="0.1.0",
+    lifespan=_lifespan,
 )
 
 app.add_middleware(
@@ -32,8 +46,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-logger = logging.getLogger("shaosongmap")
 
 
 class ExtractRequest(BaseModel):

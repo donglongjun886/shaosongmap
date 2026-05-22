@@ -38,9 +38,9 @@ def _init_ocr():
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=False,
-        text_det_limit_side_len=960,
+        text_det_limit_side_len=720,
         text_det_limit_type="max",
-        text_det_thresh=0.3,
+        text_det_thresh=0.4,
         text_det_box_thresh=0.5,
         text_recognition_batch_size=8,
     )
@@ -144,7 +144,7 @@ def recognize(image_bytes: bytes) -> list[str]:
     """
     # 将 bytes 转换为 numpy array（PaddleOCR 3.x 要求）
     image = Image.open(io.BytesIO(image_bytes))
-    image = image.convert("RGB")
+    image = image.convert("L")
     # 预处理：大图缩放到合理尺寸，加速检测
     image = _preprocess_image(image)
     image_np = np.array(image)

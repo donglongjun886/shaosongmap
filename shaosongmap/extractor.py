@@ -14,46 +14,20 @@ load_dotenv()
 
 from shaosongmap.models import CampaignExtract, CampaignTimeline
 
-_SYSTEM_PROMPT = """你是一位中国历史地理专家，擅长从历史战争文本中提取结构化信息。
-
-你的任务：分析用户提供的历史战役/行军文本，提取以下信息并输出 JSON：
+_SYSTEM_PROMPT = """你是一位中国历史地理专家，从战役/行军文本中提取结构化JSON。
 
 {
-  "campaign_name": "战役名称，如果文本没有明确名称则为 null",
-  "factions": [
-    {
-      "name": "阵营名称（如宋军、金军、蒙古军）",
-      "commanders": ["将领名字列表"],
-      "troops": "兵力描述（如三万、十万），如果文本未提及则为 null"
-    }
-  ],
-  "places": [
-    {
-      "name": "古地名（按文中出现顺序）",
-      "context": "原文中出现该地名的句子片段，用于后续消歧义",
-      "place_type": "地名类型，可选值：city(城池)、mountain_pass(关隘)、river(河流)、mountain(山脉)、region(行政区)、battlefield(战场)。无法确定时填 null"
-    }
-  ],
-  "routes": [
-    {
-      "from": "起点地名",
-      "to": "终点地名",
-      "via": ["途经地点，无则为空数组"]
-    }
-  ]
+  "campaign_name": "战役名称或null",
+  "factions": [{"name": "阵营名", "commanders": ["将领"], "troops": "兵力描述或null"}],
+  "places": [{"name": "古地名", "context": "原文片段", "place_type": "city|mountain_pass|river|mountain|region|battlefield|null"}],
+  "routes": [{"from": "起点", "to": "终点", "via": ["途经地"]}]
 }
 
 规则：
-1. 只提取文本中明确提及的信息，不要编造
-2. 地名使用原文中的古代名称，不要转换为现代名称
-3. 兵力保留原文描述（如「三万人马」「十万大军」），不要转换为数字
-4. 如果同一方有多位将领，全部列出
-5. 行军路线按文中描述的先后顺序排列
-6. 如果文本只描述行军不涉及战斗，campaign_name 为 null
-7. 文本可能混合朝堂对话、人物议论和军事行动描写。只从确认的军事行动段落中提取信息。人物在对话中假设、建议或讨论的军事行动（如「臣以为应从某地出兵」）不应被视为实际行军节点
-8. 朝堂对话、场景描写等非军事内容直接忽略
-9. 地名如作为军队编制名称的一部分出现——如「秦凤路大军」「泾原路兵马」「环庆路将士」「熙河路各部」等，其中的行政区划名（秦凤路、泾原路等）是军队编制修饰语，而非独立地理位置，不要将其提取为 places。仅当地名在文中作为独立地理实体出现（如「大军自秦凤路出发」「渭州城内」），才提取为 places
-10. 如果文本中没有任何可确认的军事行动，返回空的 places 和 routes，factions 仅包含对话中提到的阵营（无将领和兵力）"""
+1. 只提取明确信息，地名用原文古称，兵力保留原文描述（如「三万」），不要编造或转换
+2. 仅从实际军事行动段落提取，忽略朝堂对话和议论。对话中假设性建议（如「臣以为应从X出兵」）不算实际行军
+3. 军队编制名（如「秦凤路大军」「泾原路兵马」）中的行政区划名不提取为places，仅在作为独立地理位置出现时才提取
+4. 无军事行动时返回空places/routes"""
 
 
 def _build_client() -> OpenAI:
@@ -151,68 +125,22 @@ def extract(text: str, model: str = "deepseek-chat") -> CampaignExtract:
     return CampaignExtract.model_validate(data)
 
 
-_TIMELINE_SYSTEM_PROMPT = """你是一位中国历史地理专家，擅长从历史战争文本中提取结构化信息。
-
-你的任务：分析用户提供的历史战役/行军文本，提取以下信息并输出 JSON：
+_TIMELINE_SYSTEM_PROMPT = """你是一位中国历史地理专家，从战役/行军文本中提取结构化JSON。
 
 {
-  "campaign_name": "战役名称，如果文本没有明确名称则为 null",
-  "factions": [
-    {
-      "name": "阵营名称（如宋军、金军、蒙古军）",
-      "commanders": ["将领名字列表"],
-      "troops": "兵力描述（如三万、十万），如果文本未提及则为 null"
-    }
-  ],
-  "places": [
-    {
-      "name": "古地名（按文中出现顺序）",
-      "context": "原文中出现该地名的句子片段，用于后续消歧义",
-      "place_type": "地名类型，可选值：city(城池)、mountain_pass(关隘)、river(河流)、mountain(山脉)、region(行政区)、battlefield(战场)。无法确定时填 null"
-    }
-  ],
-  "routes": [
-    {
-      "from": "起点地名",
-      "to": "终点地名",
-      "via": ["途经地点，无则为空数组"]
-    }
-  ],
-  "events": [
-    {
-      "seq": 1,
-      "event_type": "march",
-      "description": "岳飞率军从襄阳出发，向东北方向行军",
-      "actors": ["岳飞", "岳家军"],
-      "places_involved": ["襄阳"]
-    },
-    {
-      "seq": 2,
-      "event_type": "battle",
-      "description": "在唐州遭遇金军斥候，发生小规模冲突",
-      "actors": ["岳飞", "金军斥候"],
-      "places_involved": ["唐州"]
-    }
-  ]
+  "campaign_name": "战役名称或null",
+  "factions": [{"name": "阵营名", "commanders": ["将领"], "troops": "兵力描述或null"}],
+  "places": [{"name": "古地名", "context": "原文片段", "place_type": "city|mountain_pass|river|mountain|region|battlefield|null"}],
+  "routes": [{"from": "起点", "to": "终点", "via": ["途经地"]}],
+  "events": [{"seq": 1, "event_type": "march|battle|encamp|retreat", "description": "一句话描述", "actors": ["将领/部队"], "places_involved": ["地名"]}]
 }
 
 规则：
-1. 只提取文本中明确提及的信息，不要编造
-2. 地名使用原文中的古代名称，不要转换为现代名称
-3. 兵力保留原文描述（如「三万人马」「十万大军」），不要转换为数字
-4. 如果同一方有多位将领，全部列出
-5. 行军路线按文中描述的先后顺序排列
-6. 如果文本只描述行军不涉及战斗，campaign_name 为 null
-7. 文本可能混合朝堂对话、人物议论和军事行动描写。只从确认的军事行动段落中提取信息。人物在对话中假设、建议或讨论的军事行动（如「臣以为应从某地出兵」）不应被视为实际行军节点
-8. 朝堂对话、场景描写等非军事内容直接忽略
-9. 地名如作为军队编制名称的一部分出现——如「秦凤路大军」「泾原路兵马」「环庆路将士」「熙河路各部」等，其中的行政区划名（秦凤路、泾原路等）是军队编制修饰语，而非独立地理位置，不要将其提取为 places。仅当地名在文中作为独立地理实体出现（如「大军自秦凤路出发」「渭州城内」），才提取为 places
-10. 将文中军事行动按时间顺序分解为事件序列，填入 events 数组。每个事件：
-   - seq: 从 1 开始递增
-   - event_type: "march"(行军)、"battle"(战斗)、"encamp"(扎营/驻扎)、"retreat"(撤退)
-   - description: 用一句话简洁描述该事件
-   - actors: 参与该事件的将领或部队
-   - places_involved: 该事件涉及的地名，必须是 places 数组中已列出的地名
-11. 如果文本中没有任何可确认的军事行动，返回空的 places、routes 和 events"""
+1. 只提取明确信息，地名用原文古称，兵力保留原文描述，不要编造或转换
+2. 仅从实际军事行动段落提取，忽略朝堂对话和议论。对话中假设性建议不算实际行军
+3. 军队编制名（如「秦凤路大军」「泾原路兵马」）中的行政区划名不提取为places
+4. events按时间顺序排列，seq从1递增，event_type为march/battle/encamp/retreat，places_involved必须是places中已有地名
+5. 无军事行动时返回空places/routes/events"""
 
 
 def extract_timeline(text: str, model: str = "deepseek-chat") -> CampaignTimeline:

@@ -4,6 +4,8 @@
 
 系统 SHALL 接收一段中文战役/行军文本，通过 DeepSeek API 提取结构化信息，并返回经过 Pydantic 校验的 JSON 对象。
 
+System Prompt SHALL 精简至最小必要指令，移除 JSON schema 中的注释行和冗余示例，减少每次 API 调用的输入 token 消耗。Prompt 语义和提取要求保持不变。
+
 提取的字段 MUST 包含：
 - `campaign_name`: 战役名称（可为 null）
 - `factions`: 参战方列表，每方包含名称、将领列表、兵力描述

@@ -144,7 +144,7 @@ def recognize(image_bytes: bytes) -> list[str]:
     """
     # 将 bytes 转换为 numpy array（PaddleOCR 3.x 要求）
     image = Image.open(io.BytesIO(image_bytes))
-    image = image.convert("L")
+    image = image.convert("RGB")
     # 预处理：大图缩放到合理尺寸，加速检测
     image = _preprocess_image(image)
     image_np = np.array(image)

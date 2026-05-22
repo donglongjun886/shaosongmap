@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from shaosongmap.extractor import extract, extract_timeline
 from shaosongmap.geocoder import geocode
-from shaosongmap.models import CampaignExtract, CampaignMap, CampaignTimeline, GeoFeature, RouteLine, TimelineEvent
+from shaosongmap.models import CampaignExtract, CampaignMap, CampaignTimeline, ForceUnit, GeoFeature, RouteLine, TimelineEvent, UnitState
 from shaosongmap.ocr import _get_ocr, merge_texts, ocr_main
 
 logger = logging.getLogger("shaosongmap")
@@ -353,6 +353,204 @@ def _build_routes(
     return route_lines
 
 
+# 进攻方位 → 角度（正东=0°，逆时针）
+_DIRECTION_ANGLE: dict[str, float] = {
+    "东": 0, "南": 270, "西": 180, "北": 90,
+    "东南": 315, "西南": 225, "东北": 45, "西北": 135,
+}
+
+
+def _angle_for_direction(direction: str | None) -> float:
+    """将方位词转换为角度，默认 0°（正东）。"""
+    if direction and direction in _DIRECTION_ANGLE:
+        return _DIRECTION_ANGLE[direction]
+    return 0.0
+
+
+def _make_block_arrow_polygon(
+    lng: float,
+    lat: float,
+    angle_deg: float,
+    body_len_m: float,
+    body_width_m: float,
+    head_len_m: float,
+) -> list[list[float]]:
+    """生成块状箭头的 GeoJSON Polygon 坐标环。"""
+    import math
+
+    lat_rad = math.radians(lat)
+    deg_per_m_lat = 1.0 / 111320.0
+    deg_per_m_lng = 1.0 / (111320.0 * math.cos(lat_rad))
+
+    angle_rad = math.radians(angle_deg)
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    perp_cos = math.cos(angle_rad + math.pi / 2)
+    perp_sin = math.sin(angle_rad + math.pi / 2)
+
+    def offset(base_lng, base_lat, forward_m, sideways_m):
+        dlng = (forward_m * cos_a + sideways_m * perp_cos) * deg_per_m_lng
+        dlat = (forward_m * sin_a + sideways_m * perp_sin) * deg_per_m_lat
+        return [base_lng + dlng, base_lat + dlat]
+
+    half_w = body_width_m / 2
+    neck_w = body_width_m * 0.3
+
+    p1 = offset(lng, lat, 0, -half_w)
+    p2 = offset(lng, lat, 0, half_w)
+    p3 = offset(lng, lat, body_len_m, half_w)
+    p4 = offset(lng, lat, body_len_m, neck_w)
+    p_tip = offset(lng, lat, body_len_m + head_len_m, 0)
+    p5 = offset(lng, lat, body_len_m, -neck_w)
+    p6 = offset(lng, lat, body_len_m, -half_w)
+
+    return [p1, p2, p3, p4, p_tip, p5, p6, p1]
+
+
+def _compute_unit_offsets(
+    unit_states: list[UnitState],
+    units: list[ForceUnit],
+    features: list[GeoFeature],
+    scale: str | None,
+) -> dict[str, list[float]]:
+    """计算同名地多部队的平行错位偏移。
+
+    同一地点有多个部队时，沿垂直于进攻方向做平行错位。
+
+    Returns:
+        映射: unit_name → [offset_lng, offset_lat]
+    """
+    import math
+
+    # 建立地名→坐标映射
+    coord_map: dict[str, list[float]] = {}
+    for feat in features:
+        if feat.lng is not None and feat.lat is not None:
+            coord_map[feat.name] = [feat.lng, feat.lat]
+
+    # 建立部队名→进攻方向映射
+    dir_map: dict[str, float] = {}
+    for u in units:
+        dir_map[u.name] = _angle_for_direction(u.direction)
+
+    # 统计每个地点有多少部队（按最新状态）
+    location_units: dict[str, list[str]] = {}
+    for us in unit_states:
+        if us.location and us.location in coord_map:
+            loc = us.location
+            if loc not in location_units:
+                location_units[loc] = []
+            if us.unit_name not in location_units[loc]:
+                location_units[loc].append(us.unit_name)
+
+    # 为每个部队计算偏移
+    offsets: dict[str, list[float]] = {}
+    arrow_spacing_m = 800 if scale == "tactical" else 3000 if scale == "battle" else 10000
+
+    for loc, unit_names in location_units.items():
+        if len(unit_names) <= 1:
+            continue  # 不需要偏移
+        base = coord_map[loc]
+        lat_rad = math.radians(base[1])
+        deg_per_m_lng = 1.0 / (111320.0 * math.cos(lat_rad))
+        deg_per_m_lat = 1.0 / 111320.0
+
+        for i, uname in enumerate(unit_names):
+            # 平行错位：沿垂直方向偏移
+            angle = dir_map.get(uname, 0.0)
+            perp_rad = math.radians(angle + 90)
+            # 以中心为基准，向两侧展开
+            offset_idx = (i - (len(unit_names) - 1) / 2) * 1.2
+            offset_m = offset_idx * arrow_spacing_m
+            offsets[uname] = [
+                base[0] + offset_m * math.cos(perp_rad) * deg_per_m_lng,
+                base[1] + offset_m * math.sin(perp_rad) * deg_per_m_lat,
+            ]
+
+    return offsets
+
+
+def _make_unit_geojson(
+    units: list[ForceUnit],
+    unit_states: list[UnitState],
+    features: list[GeoFeature],
+    scale: str | None,
+) -> list[dict]:
+    """为部队生成块状箭头 GeoJSON Feature 列表。"""
+    from collections import defaultdict
+
+    # 建立地名→坐标映射
+    coord_map: dict[str, list[float]] = {}
+    for feat in features:
+        if feat.lng is not None and feat.lat is not None:
+            coord_map[feat.name] = [feat.lng, feat.lat]
+
+    # 计算同地多部队偏移
+    offsets = _compute_unit_offsets(unit_states, units, features, scale)
+
+    # Scale → 箭头尺寸（米）
+    if scale == "tactical":
+        body_len, body_width, head_len = 400, 200, 150
+    elif scale == "battle":
+        body_len, body_width, head_len = 2000, 800, 600
+    else:
+        body_len, body_width, head_len = 5000, 2000, 1500
+
+    # 建立部队名→部队对象映射
+    unit_map: dict[str, ForceUnit] = {u.name: u for u in units}
+
+    # 按 seq 分组 unit_states
+    seq_states: dict[int, list[UnitState]] = defaultdict(list)
+    for us in unit_states:
+        seq_states[us.seq].append(us)
+
+    geojson_features: list[dict] = []
+    seen_keys: set[tuple[str, int]] = set()  # (unit_name, seq) 去重
+
+    for seq, states in sorted(seq_states.items()):
+        for us in states:
+            key = (us.unit_name, seq)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+
+            unit = unit_map.get(us.unit_name)
+            location = us.location
+            if not location or location not in coord_map:
+                continue
+
+            base = coord_map[location]
+            offset = offsets.get(us.unit_name, [0, 0])
+            anchor_lng = base[0] + offset[0]
+            anchor_lat = base[1] + offset[1]
+
+            direction = us.direction or (unit.direction if unit else None)
+            angle = _angle_for_direction(direction)
+            coords = _make_block_arrow_polygon(
+                anchor_lng, anchor_lat, angle,
+                body_len, body_width, head_len,
+            )
+
+            props = {
+                "unit_name": us.unit_name,
+                "faction": unit.faction if unit else "",
+                "status": us.status,
+                "step": seq,
+                "description": us.description,
+                "direction": direction,
+                "scale": scale,
+            }
+
+            geojson_features.append({
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": [coords]},
+                "properties": props,
+            })
+
+    return geojson_features
+
+
 def _sse_event(event: str, data: dict) -> str:
     """构建一条 SSE 格式的事件字符串。"""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -474,6 +672,18 @@ async def extract_campaign(request: ExtractRequest):
             "elapsed_ms": round(render_elapsed),
         })
 
+        # Stage 3.5: Build unit GeoJSON (timeline mode only)
+        unit_geojson_features: list[dict] = []
+        if use_timeline:
+            timeline_units = getattr(campaign, "units", [])
+            timeline_unit_states = getattr(campaign, "unit_states", [])
+            if timeline_units and timeline_unit_states:
+                unit_geojson_features = _make_unit_geojson(
+                    timeline_units, timeline_unit_states, features, campaign.scale,
+                )
+                # 将部队 feature 合并到 GeoJSON FeatureCollection
+                geojson["features"].extend(unit_geojson_features)
+
         # Final result
         total_elapsed = (time.perf_counter() - t_pipeline_start) * 1000
         logger.info("管道全部完成: 总耗时 %.0fms (提取 %.0f + 编码 %.0f + 渲染 %.0f)",
@@ -496,6 +706,10 @@ async def extract_campaign(request: ExtractRequest):
         if use_timeline and timeline_events:
             result["events"] = [e.model_dump() for e in timeline_events]
             result["total_steps"] = len(timeline_events)
+            if timeline_units:
+                result["units"] = [u.model_dump() for u in timeline_units]
+            if timeline_unit_states:
+                result["unit_states"] = [us.model_dump() for us in timeline_unit_states]
         yield _sse_event("result", result)
 
     return StreamingResponse(

@@ -19,6 +19,12 @@ PlaceType = Literal["city", "mountain_pass", "river", "mountain", "region", "bat
 
 MilitaryScale = Literal["tactical", "battle", "strategic"]
 
+UnitStatus = Literal["deploying", "marching", "engaging", "retreating", "routing"]
+"""部队状态：待命/列阵 → 进军/机动 → 交战/接敌 → 撤退 → 溃散"""
+
+TroopType = Literal["infantry", "cavalry", "mixed"]
+"""兵种类型：步兵 / 骑兵 / 混合"""
+
 
 class Place(BaseModel):
     """文本中出现的地名。"""
@@ -69,10 +75,43 @@ class TimelineEvent(BaseModel):
     places_involved: list[str] = Field(default_factory=list, description="事件涉及的地名，须为 places 中的已有地名")
 
 
+class ForceUnit(BaseModel):
+    """从战役文本中识别出的独立军事部队实体。"""
+
+    name: str = Field(description="部队名称，如「焦文通部」「合扎猛安」，在提取结果中保持唯一")
+    faction: str = Field(description="所属阵营名称，对应 factions 中的某个阵营")
+    commander: str = Field(default="", description="指挥官姓名")
+    troop_type: TroopType = Field(default="mixed", description="兵种类型：infantry(步兵) / cavalry(骑兵) / mixed(混合)")
+    troop_count: str = Field(default="", description="兵力描述原文，如「数千」「满员一千骑」")
+    direction: Optional[str] = Field(
+        default=None,
+        description="进攻方向，以方位词表达（东/南/西/北/东南/西南/东北/西北），无明确方向时为 null",
+    )
+
+
+class UnitState(BaseModel):
+    """部队在某个时间线步骤中的状态快照。"""
+
+    seq: int = Field(ge=1, description="对应的时间线步骤序号")
+    unit_name: str = Field(description="部队名称，对应 units 中某个 ForceUnit 的 name")
+    status: UnitStatus = Field(description="部队当前状态")
+    location: Optional[str] = Field(
+        default=None,
+        description="部队当前位置关联的地名，为 places 中的地名；无法关联时为 null",
+    )
+    direction: Optional[str] = Field(
+        default=None,
+        description="当前步骤的进攻方向，覆盖 ForceUnit 的默认方向",
+    )
+    description: str = Field(default="", description="一句话中文描述，概括该部队在此步骤的战术动作")
+
+
 class CampaignTimeline(CampaignExtract):
-    """时间线模式输出：继承战役提取结果，附加事件序列。"""
+    """时间线模式输出：继承战役提取结果，附加事件序列、部队和部队状态。"""
 
     events: list[TimelineEvent] = Field(default_factory=list, description="按时间顺序排列的事件序列")
+    units: list[ForceUnit] = Field(default_factory=list, description="识别出的部队实体列表")
+    unit_states: list[UnitState] = Field(default_factory=list, description="各部队在各步骤中的状态快照")
 
 
 class GeoFeature(BaseModel):

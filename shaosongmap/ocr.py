@@ -27,6 +27,19 @@ _COMMENT_HEADER_PATTERN = re.compile(
     r"讨论热烈.*本章含\d+条段评"
 )
 
+# Unicode 上标数字：¹²³⁴⁵⁶⁷⁸⁹⁰（起点评论区编号）
+_SUPERSCRIPT_DIGITS = re.compile(r"[¹²³⁴⁵⁶⁷⁸⁹⁰]+")
+
+# 方括号评论编号：[1]、[23]、[1,2]、[3,4,5] 等
+_BRACKET_COMMENT = re.compile(r"\[\d+(?:,\d+)*\]")
+
+# 句末标点后的孤立评论数字：针对 OCR 将小号上标数字识别为普通 inline 数字的场景
+# 匹配：。！？… 或连续2+英文句点 + 1~3位数字 + 紧随中文字符
+# 排除数字后紧跟数量词（万/千/百/十/余/数/两/几），避免误删"5万"、"10余"等
+_POST_PUNCT_DIGITS = re.compile(
+    r"([。！？…]|\.{2,})\d{1,3}(?![万千百十余数两几])(?=[一-鿿])"
+)
+
 _MIN_TEXT_LENGTH = 50
 
 
@@ -77,6 +90,20 @@ def _preprocess_image(image: Image.Image) -> Image.Image:
     return image.resize((new_w, new_h), Image.LANCZOS)
 
 
+def _remove_comment_markers(text: str) -> str:
+    """移除起点评论区上标数字标记。
+
+    处理三种模式：
+    1. Unicode 上标数字（¹²³⁴⁵⁶⁷⁸⁹⁰）—— 评论编号的 OCR 直接识别结果
+    2. 方括号评论编号（[1]、[23]、[1,2]、[3,4,5]）—— 评论链接的另一种 OCR 形态
+    3. 句末标点后的孤立数字（。14、。5、……122）—— OCR 将小号上标识别为普通数字
+    """
+    text = _SUPERSCRIPT_DIGITS.sub("", text)
+    text = _BRACKET_COMMENT.sub("", text)
+    text = _POST_PUNCT_DIGITS.sub(r"\1", text)
+    return text
+
+
 def _clean_text(raw_lines: list[str]) -> str:
     """清洗 OCR 识别结果。
 
@@ -85,6 +112,7 @@ def _clean_text(raw_lines: list[str]) -> str:
     2. 移除匹配 UI 关键词的行
     3. 非中文占比过高的行丢弃
     4. 合并连续段落行
+    5. 移除起点评论区上标数字标记（Unicode 上标 + 方括号编号）
 
     Args:
         raw_lines: OCR 识别的原始文本行列表
@@ -130,6 +158,8 @@ def _clean_text(raw_lines: list[str]) -> str:
 
     # 合并为连续段落
     text = "".join(cleaned)
+    # 移除起点评论区上标数字标记
+    text = _remove_comment_markers(text)
     return text
 
 

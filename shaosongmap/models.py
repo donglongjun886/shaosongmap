@@ -17,6 +17,8 @@ class Faction(BaseModel):
 
 PlaceType = Literal["city", "mountain_pass", "river", "mountain", "region", "battlefield"]
 
+MilitaryScale = Literal["tactical", "battle", "strategic"]
+
 
 class Place(BaseModel):
     """文本中出现的地名。"""
@@ -46,6 +48,10 @@ class CampaignExtract(BaseModel):
     factions: list[Faction] = Field(default_factory=list, description="参战方")
     places: list[Place] = Field(default_factory=list, description="地名列表")
     routes: list[Route] = Field(default_factory=list, description="行军路线")
+    scale: Optional[MilitaryScale] = Field(
+        default=None,
+        description="军事行动规模：tactical(战术级,1-10km) / battle(战役级,20-200km) / strategic(战略级,200-1000km)",
+    )
 
 
 # ── 时间线事件类型 ──

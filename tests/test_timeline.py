@@ -83,6 +83,7 @@ def test_extract_timeline_full_sequence(mock_openai: MagicMock):
                 "places_involved": ["朱仙镇"],
             },
         ],
+        "scale": "battle",
     })
 
     result = extract_timeline(TIMELINE_SAMPLE)
@@ -91,6 +92,7 @@ def test_extract_timeline_full_sequence(mock_openai: MagicMock):
     assert len(result.places) == 5
     assert len(result.routes) == 1
     assert len(result.events) == 5
+    assert result.scale == "battle"
 
     # 验证事件序列结构
     assert result.events[0].seq == 1

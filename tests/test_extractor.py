@@ -40,6 +40,7 @@ def test_extract_full_fields(mock_openai: MagicMock):
         "routes": [
             {"from": "襄阳", "to": "汴京", "via": ["唐州"]},
         ],
+        "scale": "battle",
     })
 
     result = extract(SAMPLE)
@@ -49,6 +50,7 @@ def test_extract_full_fields(mock_openai: MagicMock):
     assert result.factions[0].commanders == ["岳飞"]
     assert len(result.places) == 4
     assert len(result.routes) == 1
+    assert result.scale == "battle"
 
 
 @patch("shaosongmap.extractor.OpenAI")
@@ -225,6 +227,73 @@ def test_extract_filters_military_unit_places(mock_openai: MagicMock):
     assert "泾原路" not in place_names
     assert "渭州" in place_names
     assert "原州" in place_names
+
+
+# ── scale 字段测试 ──
+
+
+@patch("shaosongmap.extractor.OpenAI")
+def test_extract_scale_tactical(mock_openai: MagicMock):
+    """战术级：单次局部冲突应返回 tactical。"""
+    mock_openai.return_value.chat.completions.create.return_value = _mock_response({
+        "campaign_name": None,
+        "factions": [
+            {"name": "宋军", "commanders": ["焦文通"], "troops": "数千"},
+            {"name": "金军", "commanders": ["蒲查胡盏"], "troops": "一千骑"},
+        ],
+        "places": [
+            {"name": "东坡塬", "context": "从东坡塬上轮换下来"},
+            {"name": "金粟山", "context": "金粟山下披挂整齐"},
+            {"name": "塬地", "context": "贴着塬底"},
+        ],
+        "routes": [],
+        "scale": "tactical",
+    })
+
+    result = extract("焦文通部在东坡塬遭遇金军铁浮屠冲击，全军崩溃。")
+    assert result.scale == "tactical"
+
+
+@patch("shaosongmap.extractor.OpenAI")
+def test_extract_scale_strategic(mock_openai: MagicMock):
+    """战略级：跨多路大军应返回 strategic。"""
+    mock_openai.return_value.chat.completions.create.return_value = _mock_response({
+        "campaign_name": "宋金富平会战",
+        "factions": [
+            {"name": "宋军", "commanders": ["张浚", "刘锡", "吴玠"], "troops": "十八万"},
+            {"name": "金军", "commanders": ["完颜宗弼", "完颜娄室"], "troops": None},
+        ],
+        "places": [
+            {"name": "秦凤路", "context": "秦凤路出兵"},
+            {"name": "泾原路", "context": "泾原路出兵"},
+            {"name": "环庆路", "context": "环庆路出兵"},
+            {"name": "熙河路", "context": "熙河路出兵"},
+            {"name": "富平", "context": "会战于富平"},
+        ],
+        "routes": [
+            {"from": "秦凤路", "to": "富平"},
+            {"from": "泾原路", "to": "富平"},
+        ],
+        "scale": "strategic",
+    })
+
+    result = extract("张浚调五路大军会战于富平。")
+    assert result.scale == "strategic"
+
+
+@patch("shaosongmap.extractor.OpenAI")
+def test_extract_scale_invalid(mock_openai: MagicMock):
+    """非法 scale 值应触发 ValidationError。"""
+    mock_openai.return_value.chat.completions.create.return_value = _mock_response({
+        "campaign_name": "测试",
+        "factions": [],
+        "places": [],
+        "routes": [],
+        "scale": "continental",
+    })
+
+    with pytest.raises(ValueError):
+        extract("测试文本。")
 
 
 def test_place_type_field():

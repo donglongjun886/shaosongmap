@@ -188,6 +188,7 @@
       </div>
       <h3>📋 提取结果 <span style="font-weight:normal;font-size:11px;color:#999">(可编辑后重新渲染)</span></h3>
       <div id="campaign-info"></div>
+      <div id="scale-indicator" style="font-size:12px;color:#666;margin-bottom:8px"></div>
       <h3 style="margin-top:12px">📍 地名坐标</h3>
       <div id="places-list"></div>
       <h3 style="margin-top:12px">🛤️ 行军路线</h3>
@@ -716,6 +717,9 @@ function handleSSEEvent(type, data) {
     setStageState('render', 'done');
     _lastExtractData = data;
     _dataModified = false;
+    // 显示尺度标签
+    const scaleLabels = { tactical: '⚔️ 战术级 (1-10km)', battle: '🏴 战役级 (20-200km)', strategic: '🗺️ 战略级 (200-1000km)' };
+    document.getElementById('scale-indicator').textContent = scaleLabels[data.scale] || '';
     // Timeline mode
     if (data.events && data.events.length > 0) {
       _events = data.events;
@@ -793,7 +797,7 @@ function markModified() {
 
 function collectModifiedData() {
   const name = document.getElementById('edit-name')?.value || '';
-  const data = { campaign_name: name || null, factions: [], places: [], routes: [], dynasty: document.getElementById('dynasty-select').value || null };
+  const data = { campaign_name: name || null, factions: [], places: [], routes: [], dynasty: document.getElementById('dynasty-select').value || null, scale: _lastExtractData?.scale || null };
 
   // 收集阵营
   if (_lastExtractData) {
@@ -929,9 +933,10 @@ function updateMap(data) {
     const bounds = new maplibregl.LngLatBounds();
     placeFeatures.forEach(f => { if (f.geometry?.coordinates) bounds.extend(f.geometry.coordinates); });
     routeFeatures.forEach(f => { if (f.geometry?.coordinates) f.geometry.coordinates.forEach(c => bounds.extend(c)); });
-    map.fitBounds(bounds, { padding: 60, maxZoom: 10 });
+    const zoomMap = { tactical: 14, battle: 10, strategic: 6 };
+    const maxZoom = zoomMap[data.scale] || 10;
+    map.fitBounds(bounds, { padding: 60, maxZoom: maxZoom });
   }
-  // 应用时间轴步骤过滤（如有事件数据）
   applyTimelineFilters();
 }
 

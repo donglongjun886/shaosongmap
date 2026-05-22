@@ -71,6 +71,7 @@ class ExtractResponse(BaseModel):
     features: list[dict]
     routes: list[dict]
     geojson: dict = Field(description="GeoJSON FeatureCollection，用于前端地图渲染")
+    scale: str | None = Field(default=None, description="军事行动规模：tactical / battle / strategic")
 
 
 class RenderRequest(BaseModel):
@@ -81,6 +82,7 @@ class RenderRequest(BaseModel):
     places: list[dict] = Field(default_factory=list, description="地名列表 [{name, context}]")
     routes: list[dict] = Field(default_factory=list, description="行军路线 [{from, to, via}]")
     dynasty: str | None = Field(default=None, description="朝代提示")
+    scale: str | None = Field(default=None, description="军事行动规模")
 
 
 class OcrResponse(BaseModel):
@@ -379,6 +381,7 @@ def _run_pipeline(text: str, dynasty: str | None) -> dict:
         "features": [f.model_dump() for f in features],
         "routes": [r.model_dump() for r in route_lines],
         "geojson": geojson,
+        "scale": campaign.scale,
     }
 
 
@@ -482,6 +485,7 @@ async def extract_campaign(request: ExtractRequest):
             "features": [f.model_dump() for f in features],
             "routes": [r.model_dump() for r in route_lines],
             "geojson": geojson,
+            "scale": campaign.scale,
             "elapsed": {
                 "extract_ms": round(extract_elapsed),
                 "geocode_ms": round(geocode_elapsed),
@@ -526,6 +530,7 @@ async def render_modified(request: RenderRequest):
         factions=factions,
         places=places,
         routes=routes,
+        scale=request.scale,
     )
 
     # Geocode
@@ -553,6 +558,7 @@ async def render_modified(request: RenderRequest):
         features=[f.model_dump() for f in features],
         routes=[r.model_dump() for r in route_lines],
         geojson=geojson,
+        scale=campaign.scale,
     )
 
 

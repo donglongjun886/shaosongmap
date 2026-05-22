@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 import uuid
 from pathlib import Path
 
@@ -30,6 +32,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger = logging.getLogger("shaosongmap")
 
 
 class ExtractRequest(BaseModel):
@@ -72,6 +76,7 @@ class OcrResponse(BaseModel):
 
     text: str = Field(description="清洗后的连续文本段落")
     raw_lines: int = Field(description="OCR 原始识别行数")
+    elapsed_ms: float = Field(description="OCR 耗时（毫秒）")
 
 
 _ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg"}
@@ -102,11 +107,14 @@ async def ocr_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="图片不能为空")
 
     try:
+        t0 = time.perf_counter()
         text, raw_lines = ocr_main(image_bytes)
+        elapsed = (time.perf_counter() - t0) * 1000
+        logger.info("OCR完成: %d行 → %d字符, 耗时 %.0fms", raw_lines, len(text), elapsed)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    return OcrResponse(text=text, raw_lines=raw_lines)
+    return OcrResponse(text=text, raw_lines=raw_lines, elapsed_ms=round(elapsed))
 
 
 _MAX_BATCH_SIZE = 10
@@ -152,8 +160,10 @@ async def ocr_batch(files: list[UploadFile] = File(...)):
     async def event_stream():
         texts: list[str] = []
         total = len(file_data)
+        t_pipeline_start = time.perf_counter()
 
         for label, img_bytes in file_data:
+            t0 = time.perf_counter()
             try:
                 text, _raw_lines = ocr_main(img_bytes)
             except ValueError as e:
@@ -162,23 +172,34 @@ async def ocr_batch(files: list[UploadFile] = File(...)):
                 })
                 return
 
+            elapsed = (time.perf_counter() - t0) * 1000
+            logger.info("批量OCR %s: %d字符, 耗时 %.0fms", label, len(text), elapsed)
             texts.append(text)
             yield _sse_event("progress", {
                 "current": len(texts),
                 "total": total,
                 "char_count": len(text),
+                "elapsed_ms": round(elapsed),
             })
 
         # 去重拼接
         original_chars = sum(len(t) for t in texts)
+        t_merge_start = time.perf_counter()
         merged_text, removed_dup = merge_texts(texts)
+        merge_elapsed = (time.perf_counter() - t_merge_start) * 1000
+        logger.info("批量OCR 去重拼接: %d字符 → %d字符 (去重%d), 耗时 %.0fms",
+                     original_chars, len(merged_text), removed_dup, merge_elapsed)
         yield _sse_event("merge", {
             "original_chars": original_chars,
             "merged_chars": len(merged_text),
             "removed_dup": removed_dup,
+            "elapsed_ms": round(merge_elapsed),
         })
 
-        yield _sse_event("complete", {"text": merged_text})
+        total_elapsed = (time.perf_counter() - t_pipeline_start) * 1000
+        logger.info("批量OCR 全部完成: %d张截图 → %d字符, 总耗时 %.0fms",
+                     total, len(merged_text), total_elapsed)
+        yield _sse_event("complete", {"text": merged_text, "total_elapsed_ms": round(total_elapsed)})
 
     return StreamingResponse(
         event_stream(),
@@ -361,8 +382,11 @@ async def extract_campaign(request: ExtractRequest):
         raise HTTPException(status_code=422, detail="战役文本不能为空")
 
     async def event_stream():
+        t_pipeline_start = time.perf_counter()
+
         # Stage 1: Extract
         use_timeline = request.mode == "timeline"
+        t0 = time.perf_counter()
         try:
             if use_timeline:
                 campaign = extract_timeline(request.text)
@@ -372,6 +396,7 @@ async def extract_campaign(request: ExtractRequest):
             yield _sse_event("error", {"stage": "extract", "message": str(e)})
             return
 
+        extract_elapsed = (time.perf_counter() - t0) * 1000
         places_count = len(campaign.places)
         routes_count = len(campaign.routes)
         events_count = len(getattr(campaign, "events", []))
@@ -379,10 +404,12 @@ async def extract_campaign(request: ExtractRequest):
         if use_timeline:
             extract_detail += f", {events_count}事件"
         extract_detail += ")"
+        logger.info("Stage 1 提取: %s, 耗时 %.0fms", extract_detail, extract_elapsed)
         yield _sse_event("progress", {
             "stage": "extract_done",
             "detail": extract_detail,
             "ok": True,
+            "elapsed_ms": round(extract_elapsed),
         })
 
         # Stage 2: Geocode
@@ -390,6 +417,7 @@ async def extract_campaign(request: ExtractRequest):
         if request.dynasty and request.dynasty in _DYNASTY_YEARS:
             dyn_beg, dyn_end = _DYNASTY_YEARS[request.dynasty]
 
+        t0 = time.perf_counter()
         try:
             features = geocode(
                 campaign.places,
@@ -401,29 +429,40 @@ async def extract_campaign(request: ExtractRequest):
             yield _sse_event("error", {"stage": "geocode", "message": str(e)})
             return
 
+        geocode_elapsed = (time.perf_counter() - t0) * 1000
         chgis_count = sum(1 for f in features if f.source == "chgis")
         llm_count = sum(1 for f in features if f.source == "llm_infer")
+        logger.info("Stage 2 地理编码: %d CHGIS + %d LLM, 耗时 %.0fms",
+                     chgis_count, llm_count, geocode_elapsed)
         yield _sse_event("progress", {
             "stage": "geocode_done",
             "detail": f"匹配古地名 ({chgis_count} CHGIS + {llm_count} LLM推断)",
             "ok": True,
+            "elapsed_ms": round(geocode_elapsed),
         })
 
         # Stage 3: Build routes & GeoJSON
+        t0 = time.perf_counter()
         route_lines = _build_routes(campaign, features)
         timeline_events = getattr(campaign, "events", []) if use_timeline else None
         geojson = _make_geojson(features, route_lines, events=timeline_events)
 
+        render_elapsed = (time.perf_counter() - t0) * 1000
         render_detail = f"渲染地图 ({len(features)}标记, {len(route_lines)}路线)"
         if use_timeline and timeline_events:
             render_detail += f", {len(timeline_events)}步骤"
+        logger.info("Stage 3 渲染: %s, 耗时 %.0fms", render_detail, render_elapsed)
         yield _sse_event("progress", {
             "stage": "render_done",
             "detail": render_detail,
             "ok": True,
+            "elapsed_ms": round(render_elapsed),
         })
 
         # Final result
+        total_elapsed = (time.perf_counter() - t_pipeline_start) * 1000
+        logger.info("管道全部完成: 总耗时 %.0fms (提取 %.0f + 编码 %.0f + 渲染 %.0f)",
+                     total_elapsed, extract_elapsed, geocode_elapsed, render_elapsed)
         result: dict = {
             "extract_id": uuid.uuid4().hex[:12],
             "campaign_name": campaign.campaign_name,
@@ -431,6 +470,12 @@ async def extract_campaign(request: ExtractRequest):
             "features": [f.model_dump() for f in features],
             "routes": [r.model_dump() for r in route_lines],
             "geojson": geojson,
+            "elapsed": {
+                "extract_ms": round(extract_elapsed),
+                "geocode_ms": round(geocode_elapsed),
+                "render_ms": round(render_elapsed),
+                "total_ms": round(total_elapsed),
+            },
         }
         if use_timeline and timeline_events:
             result["events"] = [e.model_dump() for e in timeline_events]

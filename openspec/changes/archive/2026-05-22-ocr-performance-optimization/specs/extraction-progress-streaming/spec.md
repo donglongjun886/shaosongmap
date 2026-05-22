@@ -1,10 +1,4 @@
-# Extraction Progress Streaming 分阶段进度推送
-
-## Purpose
-
-通过 Server-Sent Events (SSE) 在提取管道各阶段完成后向前端推送进度事件，替换单一 loading spinner，让用户感知管道进展。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: SSE 分阶段进度推送
 
@@ -44,23 +38,3 @@
 
 - **WHEN** 管道中某个阶段失败（如 LLM API 超时）
 - **THEN** 后端发送 `error` 事件，包含 `stage` 和 `message` 字段，前端停止进度条并在对应阶段显示红色 ✗
-
-### Requirement: 修正后数据重新渲染端点
-
-系统 SHALL 提供 `POST /api/render` 端点，接收用户修正后的战役提取数据（跳过 LLM 提取步骤），直接执行 geocode 并返回 GeoJSON。
-
-请求体 MUST 包含：
-- `campaign_name`: 战役名称（可为 null）
-- `factions`: 阵营列表
-- `places`: 地名列表
-- `routes`: 行军路线列表
-
-#### Scenario: 修正地名后重新渲染
-
-- **WHEN** 用户在前端修改了地名列表中的某地名（如将 OCR 错误的「唐川」改为「唐州」），点击「重新渲染」
-- **THEN** 系统使用修正后的地名重新 geocode，返回更新后的 GeoJSON，地图刷新
-
-#### Scenario: 重新渲染不调用 LLM
-
-- **WHEN** 调用 `/api/render`
-- **THEN** 管道跳过 `extract` 步骤，直接从数据校验 → geocode → GeoJSON，耗时不超过 3 秒

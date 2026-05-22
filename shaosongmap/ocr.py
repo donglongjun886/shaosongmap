@@ -38,6 +38,11 @@ def _init_ocr():
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=False,
+        text_det_limit_side_len=960,
+        text_det_limit_type="max",
+        text_det_thresh=0.3,
+        text_det_box_thresh=0.5,
+        text_recognition_batch_size=8,
     )
 
 
@@ -49,6 +54,27 @@ def _get_ocr():
     if _ocr is None:
         _ocr = _init_ocr()
     return _ocr
+
+
+def _preprocess_image(image: Image.Image) -> Image.Image:
+    """对截图预处理：大图缩放到合理尺寸以加速 OCR 检测。
+
+    阅读 App 截图的文字通常清晰大号，缩小到长边 1600px
+    几乎不影响识别准确率，但可大幅减少检测耗时。
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    max_dim = 1600
+    w, h = image.size
+    long_side = max(w, h)
+    if long_side <= max_dim:
+        return image
+    scale = max_dim / long_side
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    logger.info("图片缩放: %dx%d → %dx%d (提速约 %.0f%%)",
+                w, h, new_w, new_h, (1 - scale**2) * 100)
+    return image.resize((new_w, new_h), Image.LANCZOS)
 
 
 def _clean_text(raw_lines: list[str]) -> str:
@@ -119,6 +145,8 @@ def recognize(image_bytes: bytes) -> list[str]:
     # 将 bytes 转换为 numpy array（PaddleOCR 3.x 要求）
     image = Image.open(io.BytesIO(image_bytes))
     image = image.convert("RGB")
+    # 预处理：大图缩放到合理尺寸，加速检测
+    image = _preprocess_image(image)
     image_np = np.array(image)
 
     ocr = _get_ocr()

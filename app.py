@@ -367,6 +367,21 @@ def _angle_for_direction(direction: str | None) -> float:
     return 0.0
 
 
+def _compute_data_diagonal(place_coords: list[tuple[float, float]]) -> float:
+    """计算数据包围盒对角线长度（米），用于自适应箭头尺寸。"""
+    import math
+    if not place_coords or len(place_coords) < 2:
+        return 100.0  # 单点默认100m
+    lngs = [c[0] for c in place_coords]
+    lats = [c[1] for c in place_coords]
+    min_lng, max_lng = min(lngs), max(lngs)
+    min_lat, max_lat = min(lats), max(lats)
+    mid_lat = math.radians((min_lat + max_lat) / 2)
+    dx = (max_lng - min_lng) * 111320.0 * math.cos(mid_lat)
+    dy = (max_lat - min_lat) * 111320.0
+    return math.sqrt(dx * dx + dy * dy)
+
+
 def _make_block_arrow_polygon(
     lng: float,
     lat: float,
@@ -446,7 +461,23 @@ def _compute_unit_offsets(
 
     # 为每个部队计算偏移
     offsets: dict[str, list[float]] = {}
-    arrow_spacing_m = 800 if scale == "tactical" else 3000 if scale == "battle" else 10000
+    # 箭头间距：基于 body_width 自适应（约1.2倍箭头宽度）
+    # body_width 由 _make_unit_geojson 中 diagonal × ratio / 3.5 得出
+    scale_ratio_w = {"tactical": 0.20, "battle": 0.08, "strategic": 0.03}
+    ratio_w = scale_ratio_w.get(scale, 0.08)
+    # 粗略估算 body_width（不重复完整对角线计算）
+    lngs = [c[0] for c in coord_map.values() if c[0] is not None]
+    lats = [c[1] for c in coord_map.values() if c[1] is not None]
+    if len(lngs) >= 2:
+        import math as _m
+        mid_lat = _m.radians((min(lats) + max(lats)) / 2)
+        dx = (max(lngs) - min(lngs)) * 111320.0 * _m.cos(mid_lat)
+        dy = (max(lats) - min(lats)) * 111320.0
+        diag = _m.sqrt(dx*dx + dy*dy)
+    else:
+        diag = 100.0
+    body_width_est = max(diag * ratio_w / 3.5, 22.0)
+    arrow_spacing_m = body_width_est * 1.2
 
     for coord, unit_names in coord_units.items():
         if len(unit_names) <= 1:
@@ -489,13 +520,21 @@ def _make_unit_geojson(
     # 计算同地多部队偏移
     offsets = _compute_unit_offsets(unit_states, units, features, scale)
 
-    # Scale → 箭头尺寸（米）
-    if scale == "tactical":
-        body_len, body_width, head_len = 400, 200, 150
-    elif scale == "battle":
-        body_len, body_width, head_len = 2000, 800, 600
-    else:
-        body_len, body_width, head_len = 5000, 2000, 1500
+    # 计算数据范围对角线，用于自适应箭头尺寸
+    place_coords = [
+        (feat.lng, feat.lat)
+        for feat in features if feat.lng is not None and feat.lat is not None
+    ]
+    diagonal_m = _compute_data_diagonal(place_coords)
+    # scale 系数：箭头占数据范围对角线的比例
+    scale_ratio = {"tactical": 0.20, "battle": 0.08, "strategic": 0.03}
+    ratio = scale_ratio.get(scale, 0.08)
+    body_len = diagonal_m * ratio
+    body_len = max(body_len, 80.0)   # 最小80m保底（极小数据范围）
+    body_len = min(body_len, 25000.0)  # 最大25km上限（战略级避免箭头过大）
+    # 新形状比例：宽长比 1:3.5，头部占全长 40%
+    body_width = body_len / 3.5
+    head_len = body_len * 0.4
 
     # 建立部队名→部队对象映射
     unit_map: dict[str, ForceUnit] = {u.name: u for u in units}

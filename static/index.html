@@ -254,35 +254,83 @@ const map = new maplibregl.Map({
     version: 8,
     glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
     sources: {},
-    layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#f5f0e1' } }]
+    layers: []
   },
   center: [112, 33],
   zoom: 5
 });
 
+// ── 底图 Provider 架构 ──
+const BASEMAP = {
+  schematic: {
+    id: 'schematic',
+    sources: {},
+    layers: [{ id: 'basemap-bg', type: 'background', paint: { 'background-color': '#f5f0e1' }, metadata: { basemap: true } }]
+  },
+  muted_osm: {
+    id: 'muted_osm',
+    sources: { 'basemap-osm': { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OSM' } },
+    layers: [{ id: 'basemap-osm', type: 'raster', source: 'basemap-osm', paint: { 'raster-opacity': 0.25, 'raster-saturation': -1 }, metadata: { basemap: true } }]
+  }
+};
+const SCALE_DEFAULT_BASEMAP = { tactical: 'schematic', battle: 'muted_osm', strategic: 'muted_osm' };
+// basemapMode: 'auto' | 'schematic' | 'muted_osm' (手动切换接口预留，暂不实现UI)
+let basemapMode = 'auto';
+
+function applyBasemap(name) {
+  const provider = BASEMAP[name];
+  if (!provider) return;
+  // 移除旧底图层
+  const style = map.getStyle();
+  if (style && style.layers) {
+    style.layers.filter(l => l.metadata && l.metadata.basemap).forEach(l => {
+      if (map.getLayer(l.id)) map.removeLayer(l.id);
+    });
+  }
+  // 移除旧底图源
+  if (style && style.sources) {
+    Object.keys(style.sources).forEach(sid => {
+      if (sid.startsWith('basemap-') && map.getSource(sid)) map.removeSource(sid);
+    });
+  }
+  // 添加新底图源
+  Object.entries(provider.sources).forEach(([sid, src]) => {
+    if (sid) map.addSource(sid, src);
+  });
+  // 添加新底图层（放在最底层）
+  const firstDataLayer = style && style.layers ? style.layers.find(l => !(l.metadata && l.metadata.basemap)) : null;
+  provider.layers.forEach(l => {
+    if (firstDataLayer && firstDataLayer.id) { map.addLayer(l, firstDataLayer.id); }
+    else { map.addLayer(l); }
+  });
+}
+
 map.on('load', () => {
+  // 初始化默认底图
+  applyBasemap('schematic');
+
   map.addSource('places', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
   map.addLayer({
     id: 'places-chgis', type: 'circle', source: 'places',
     filter: ['==', ['get', 'source'], 'chgis'],
-    paint: { 'circle-radius': 8, 'circle-color': '#155724', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
+    paint: { 'circle-radius': ['step', ['zoom'], 3, 5, 6, 8, 10, 12, 14], 'circle-color': '#155724', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
   });
   map.addLayer({
     id: 'places-llm', type: 'circle', source: 'places',
     filter: ['==', ['get', 'source'], 'llm_infer'],
-    paint: { 'circle-radius': 8, 'circle-color': '#856404', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
+    paint: { 'circle-radius': ['step', ['zoom'], 3, 5, 6, 8, 10, 12, 14], 'circle-color': '#856404', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
   });
   map.addLayer({
     id: 'place-labels-ancient', type: 'symbol', source: 'places',
-    layout: { 'text-field': ['get', 'name'], 'text-offset': [0, 1.5], 'text-size': 12, 'visibility': 'visible' },
+    layout: { 'text-field': ['get', 'name'], 'text-offset': [0, 1.5], 'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 15], 'visibility': 'visible' },
     paint: { 'text-color': '#1a1a1a', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
   map.addLayer({
     id: 'place-labels-modern', type: 'symbol', source: 'places',
     filter: ['!=', ['get', 'modern_name'], ''],
-    layout: { 'text-field': ['get', 'modern_name'], 'text-offset': [0, 2.8], 'text-size': 11, 'visibility': 'visible' },
+    layout: { 'text-field': ['get', 'modern_name'], 'text-offset': [0, 2.8], 'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 15], 'visibility': 'visible' },
     paint: { 'text-color': '#888888', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
   map.addLayer({
@@ -323,12 +371,12 @@ map.on('load', () => {
   map.addLayer({
     id: 'places-chgis-dim', type: 'circle', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    paint: { 'circle-radius': 5, 'circle-color': '#aaaaaa', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
+    paint: { 'circle-radius': ['step', ['zoom'], 1, 5, 4, 8, 8, 12, 12], 'circle-color': '#aaaaaa', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
   });
   map.addLayer({
     id: 'places-llm-dim', type: 'circle', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    paint: { 'circle-radius': 5, 'circle-color': '#bbbbbb', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
+    paint: { 'circle-radius': ['step', ['zoom'], 1, 5, 4, 8, 8, 12, 12], 'circle-color': '#bbbbbb', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
   });
 
   map.on('click', 'places-chgis', (e) => showPopup(e));
@@ -340,6 +388,12 @@ map.on('load', () => {
   map.on('click', 'unit-arrow-fill', (e) => showUnitPopup(e));
   map.on('mouseenter', 'unit-arrow-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'unit-arrow-fill', () => { map.getCanvas().style.cursor = ''; });
+
+  // TODO: Phase 3 山川河流符号层
+  // 扩展点：在 basemap 和数据层之间插入 terrain 符号图层组
+  // 数据来源：LLM 提取地形实体 → GeoJSON 生成 → 前端渲染
+  // const terrainSymbolSource = { type: 'geojson', data: {...} };
+  // const terrainSymbolLayer = { id: 'terrain-symbols', type: 'symbol', source: 'terrain-symbols', ... };
 });
 
 function showPopup(e) {
@@ -822,6 +876,11 @@ function updateMap(data) {
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
   map.getSource('unit-arrows').setData({ type: 'FeatureCollection', features: unitFeatures });
+  // 底图根据 scale 自动切换
+  if (basemapMode === 'auto' && data.scale) {
+    applyBasemap(SCALE_DEFAULT_BASEMAP[data.scale] || 'schematic');
+  }
+
   if (placeFeatures.length > 0) {
     const bounds = new maplibregl.LngLatBounds();
     placeFeatures.forEach(f => { if (f.geometry?.coordinates) bounds.extend(f.geometry.coordinates); });

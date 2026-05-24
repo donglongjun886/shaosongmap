@@ -253,15 +253,8 @@ const map = new maplibregl.Map({
   style: {
     version: 8,
     glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-    sources: {
-      osm: {
-        type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
-      }
-    },
-    layers: [{ id: 'osm-layer', type: 'raster', source: 'osm' }]
+    sources: {},
+    layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#f5f0e1' } }]
   },
   center: [112, 33],
   zoom: 5

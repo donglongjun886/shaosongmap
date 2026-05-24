@@ -7,34 +7,46 @@
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <style>
+  :root {
+    --paper: #f2e8d5;
+    --vermillion: #c23b22;
+    --indigo: #2b4c7e;
+    --ochre: #8b4513;
+    --ink: #2c2c2c;
+    --sage: #5a7a6a;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; height: 100vh; display: flex; }
-  .panel { width: 380px; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid #ddd; background: #fafafa; }
-  .panel-header { padding: 16px; background: #1a1a2e; color: #fff; font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: space-between; }
+  body { font-family: "KaiTi", "STKaiti", "楷体", "Songti SC", "SimSun", "宋体", "Noto Serif SC", serif; height: 100vh; display: flex; }
+  .panel { width: 380px; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid var(--ink); background: #f5efe0; }
+  .panel-header { padding: 16px; background: var(--ink); color: var(--paper); font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: space-between; }
   .panel-header small { font-size: 12px; opacity: 0.7; display: block; font-weight: normal; }
   .panel-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-  textarea { flex: 1; min-height: 200px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; line-height: 1.6; resize: vertical; font-family: inherit; }
+  textarea { flex: 1; min-height: 200px; padding: 12px; border: 1px solid #c8b896; border-radius: 8px; font-size: 14px; line-height: 1.6; resize: vertical; font-family: inherit; background: #faf7f0; }
   .row { display: flex; gap: 8px; align-items: center; }
-  select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: #fff; }
-  .btn { padding: 10px 24px; background: #e63946; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; transition: background 0.2s; }
-  .btn:hover { background: #d62839; }
-  .btn:disabled { background: #999; cursor: not-allowed; }
-  .result-section { border-top: 1px solid #eee; padding-top: 12px; }
-  .result-section h3 { font-size: 14px; color: #333; margin-bottom: 8px; }
+  select { padding: 8px 12px; border: 1px solid #c8b896; border-radius: 6px; font-size: 14px; background: #faf7f0; color: var(--ink); }
+  .btn { padding: 10px 24px; background: var(--vermillion); color: #fff; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; transition: background 0.2s; }
+  .btn:hover { background: #a01d14; }
+  .btn:disabled { background: #b8a99a; cursor: not-allowed; }
+  .result-section { border-top: 1px solid #d8c8a8; padding-top: 12px; }
+  .result-section h3 { font-size: 14px; color: var(--ink); margin-bottom: 8px; }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px; }
-  .tag-chgis { background: #d4edda; color: #155724; }
-  .tag-llm { background: #fff3cd; color: #856404; }
-  .tag-unknown { background: #f8d7da; color: #721c24; }
-  .map-wrap { flex: 1; position: relative; }
+  .tag-chgis { background: #e8e0d0; color: var(--ink); border: 1px solid var(--ink); }
+  .tag-llm { background: #f5efe0; color: var(--ochre); border: 1px solid var(--ochre); }
+  .tag-unknown { background: #fef0f0; color: var(--vermillion); border: 1px solid var(--vermillion); }
+  .map-wrap { flex: 1; position: relative; border: 2px solid var(--ink); box-shadow: inset 0 0 30px rgba(44,44,44,0.06); }
+  /* 宣纸纹理叠加 */
+  .map-wrap::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; opacity: 0.07;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat; }
   #map { width: 100%; height: 100%; }
-  .legend { position: absolute; bottom: 20px; right: 20px; background: rgba(255,255,255,0.9); padding: 10px 14px; border-radius: 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 10; }
+  .legend { position: absolute; bottom: 20px; right: 20px; background: rgba(250,247,240,0.92); padding: 10px 14px; border-radius: 4px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; border: 1px solid #c8b896; }
   .legend-item { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
-  .legend-divider { height: 1px; background: #ddd; margin: 6px 0; }
+  .legend-divider { height: 1px; background: #c8b896; margin: 6px 0; }
   .legend-toggle { cursor: pointer; user-select: none; font-size: 11px; }
   .legend-toggle input { margin: 0; cursor: pointer; }
-  .drop-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 16px; text-align: center; color: #999; font-size: 13px; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
-  .drop-zone:hover, .drop-zone.dragover { border-color: #e63946; background: #fff5f5; color: #e63946; }
+  .drop-zone { border: 2px dashed #c8b896; border-radius: 8px; padding: 16px; text-align: center; color: #8b7355; font-size: 13px; cursor: pointer; transition: border-color 0.2s, background 0.2s; background: #faf7f0; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--vermillion); background: #fdf5f0; color: var(--vermillion); }
   .drop-zone .hint { display: block; }
   .drop-wrap { position: relative; }
   .ocr-progress { display: none; align-items: center; gap: 8px; color: #666; font-size: 12px; margin-top: 8px; }
@@ -72,25 +84,25 @@
   .pipeline-stage.error { color: #d62839; }
   .pipeline-stage.error .dot { background: #d62839; border-color: #d62839; }
   @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
-  .editable-field { border: 1px solid transparent; border-radius: 4px; padding: 2px 4px; font-size: 13px; background: transparent; font-family: inherit; transition: border 0.2s; }
-  .editable-field:hover { border-color: #ccc; background: #fff; }
-  .editable-field:focus { border-color: #e63946; background: #fff; outline: none; }
+  .editable-field { border: 1px solid transparent; border-radius: 2px; padding: 2px 4px; font-size: 13px; background: transparent; font-family: inherit; transition: border 0.2s; }
+  .editable-field:hover { border-color: #c8b896; background: #faf7f0; }
+  .editable-field:focus { border-color: var(--vermillion); background: #faf7f0; outline: none; }
   .editable-field.wide { width: 100%; }
-  .del-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
-  .del-btn:hover { color: #d62839; }
-  .add-btn { background: none; border: 1px dashed #ccc; border-radius: 4px; color: #999; cursor: pointer; font-size: 12px; padding: 2px 8px; }
-  .add-btn:hover { border-color: #e63946; color: #e63946; }
-  .render-btn { padding: 6px 14px; background: #e63946; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
+  .del-btn { background: none; border: none; color: #8b7355; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
+  .del-btn:hover { color: var(--vermillion); }
+  .add-btn { background: none; border: 1px dashed #c8b896; border-radius: 2px; color: #8b7355; cursor: pointer; font-size: 12px; padding: 2px 8px; }
+  .add-btn:hover { border-color: var(--vermillion); color: var(--vermillion); }
+  .render-btn { padding: 6px 14px; background: var(--vermillion); color: #fff; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
   .render-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .render-btn.active { animation: glow 0.6s infinite alternate; }
-  @keyframes glow { from { box-shadow: 0 0 4px #e63946; } to { box-shadow: 0 0 12px #e63946; } }
+  @keyframes glow { from { box-shadow: 0 0 4px var(--vermillion); } to { box-shadow: 0 0 12px var(--vermillion); } }
   /* ── 模式切换 ── */
   .input-only, .view-only { display: none; flex-direction: column; gap: 12px; }
   body:not(.mode-view) .input-only { display: flex; }
   body.mode-view .view-only { display: flex; }
-  .btn-back { padding: 6px 14px; background: none; border: 1px solid #ccc; color: #333; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
-  .btn-back:hover { background: #f0f0f0; border-color: #999; }
-  .map-guide { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.55); color: #fff; padding: 14px 22px; border-radius: 8px; font-size: 14px; text-align: center; z-index: 5; pointer-events: none; transition: opacity 0.3s; }
+  .btn-back { padding: 6px 14px; background: none; border: 1px solid #8b7355; color: var(--ink); border-radius: 4px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+  .btn-back:hover { background: #f0e8d8; border-color: var(--ink); }
+  .map-guide { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(44,44,44,0.65); color: var(--paper); padding: 14px 22px; border-radius: 4px; font-size: 14px; text-align: center; z-index: 5; pointer-events: none; transition: opacity 0.3s; }
   .map-guide.hidden { opacity: 0; }
   /* ── 时间轴 UI ── */
   .timeline-wrap { display: none; margin-top: 8px; }
@@ -105,11 +117,11 @@
   .timeline-line.done { background: #4caf50; }
   .timeline-node-label { font-size: 9px; color: #999; margin-top: 2px; white-space: nowrap; }
   .step-controls { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-  .step-btn { padding: 6px 16px; background: #e63946; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
-  .step-btn:hover { background: #d62839; }
+  .step-btn { padding: 6px 16px; background: var(--vermillion); color: #fff; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+  .step-btn:hover { background: #a01d14; }
   .step-btn:disabled { background: #ccc; cursor: not-allowed; }
   .step-indicator { font-size: 14px; font-weight: bold; color: #333; min-width: 60px; text-align: center; }
-  .event-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+  .event-card { background: #faf7f0; border: 1px solid #c8b896; border-radius: 4px; padding: 10px 12px; margin-top: 8px; }
   .event-card .event-type { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-right: 6px; }
   .event-type-march { background: #dbeafe; color: #1e40af; }
   .event-type-battle { background: #fee2e2; color: #991b1b; }
@@ -225,9 +237,9 @@
   <div id="map"></div>
   <div class="map-guide" id="map-guide">输入文本或上传截图，生成战役地图</div>
   <div class="legend">
-    <div class="legend-item"><span class="legend-dot" style="background:#155724"></span> CHGIS 精确匹配</div>
-    <div class="legend-item"><span class="legend-dot" style="background:#856404"></span> LLM 推断坐标</div>
-    <div class="legend-item"><span style="color:#e63946">━━━</span> 行军路线</div>
+    <div class="legend-item"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--ink);background:transparent"></span> 城池 (CHGIS)</div>
+    <div class="legend-item"><span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid var(--ochre);vertical-align:middle"></span> 营寨 (LLM)</div>
+    <div class="legend-item"><span style="color:var(--vermillion)">- - -▷</span> 行军路线</div>
     <div class="legend-divider"></div>
     <label class="legend-item legend-toggle">
       <input type="checkbox" id="toggle-ancient" checked onchange="toggleLayer('place-labels-ancient', this.checked)">
@@ -238,8 +250,8 @@
       今地名对照
     </label>
     <div class="legend-divider"></div>
-    <div class="legend-item"><span style="color:#3b82f6">◆</span> 宋军部队</div>
-    <div class="legend-item"><span style="color:#ef4444">◆</span> 金军部队</div>
+    <div class="legend-item"><span style="color:var(--indigo)">◆</span> 宋军部队</div>
+    <div class="legend-item"><span style="color:var(--ochre)">◆</span> 金军部队</div>
     <label class="legend-item legend-toggle">
       <input type="checkbox" id="toggle-units" checked onchange="toggleUnitLayers(this.checked)">
       部队箭头
@@ -265,7 +277,7 @@ const BASEMAP = {
   schematic: {
     id: 'schematic',
     sources: {},
-    layers: [{ id: 'basemap-bg', type: 'background', paint: { 'background-color': '#f5f0e1' }, metadata: { basemap: true } }]
+    layers: [{ id: 'basemap-bg', type: 'background', paint: { 'background-color': '#f2e8d5' }, metadata: { basemap: true } }]
   },
   muted_osm: {
     id: 'muted_osm',
@@ -278,6 +290,7 @@ const SCALE_DEFAULT_BASEMAP = { tactical: 'schematic', battle: 'muted_osm', stra
 let basemapMode = 'auto';
 
 function applyBasemap(name) {
+  console.log('[applyBasemap] switching to:', name);
   const provider = BASEMAP[name];
   if (!provider) return;
   // 移除旧底图层
@@ -306,41 +319,57 @@ function applyBasemap(name) {
 }
 
 map.on('load', () => {
+  console.log('[map.onload] map loaded, applying basemap and registering icons');
   // 初始化默认底图
   applyBasemap('schematic');
+
+  // 注册城池/营寨图标
+  const ink = '#2c2c2c', ochre = '#8b4513';
+  map.addImage('fortress', _makeIconSVG('fortress', ink, 32), { pixelRatio: 2 });
+  map.addImage('fortress-dim', _makeIconSVG('fortress', '#aaa', 32), { pixelRatio: 2 });
+  map.addImage('camp', _makeIconSVG('camp', ochre, 32), { pixelRatio: 2 });
+  map.addImage('camp-dim', _makeIconSVG('camp', '#bbb', 32), { pixelRatio: 2 });
+  // 路线箭镞图标
+  const arrowCanvas = document.createElement('canvas');
+  arrowCanvas.width = 24; arrowCanvas.height = 24;
+  const actx = arrowCanvas.getContext('2d');
+  actx.fillStyle = '#c23b22';
+  actx.beginPath(); actx.moveTo(20, 12); actx.lineTo(4, 4); actx.lineTo(4, 20);
+  actx.closePath(); actx.fill();
+  map.addImage('arrowhead', actx.getImageData(0, 0, 24, 24), { pixelRatio: 2 });
 
   map.addSource('places', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
   map.addLayer({
-    id: 'places-chgis', type: 'circle', source: 'places',
+    id: 'places-chgis', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'source'], 'chgis'],
-    paint: { 'circle-radius': ['step', ['zoom'], 3, 5, 6, 8, 10, 12, 14], 'circle-color': '#155724', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
+    layout: { 'icon-image': 'fortress', 'icon-size': ['step', ['zoom'], 0.2, 5, 0.35, 8, 0.55, 12, 0.8], 'icon-allow-overlap': true }
   });
   map.addLayer({
-    id: 'places-llm', type: 'circle', source: 'places',
+    id: 'places-llm', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'source'], 'llm_infer'],
-    paint: { 'circle-radius': ['step', ['zoom'], 3, 5, 6, 8, 10, 12, 14], 'circle-color': '#856404', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' }
+    layout: { 'icon-image': 'camp', 'icon-size': ['step', ['zoom'], 0.15, 5, 0.3, 8, 0.5, 12, 0.7], 'icon-allow-overlap': true }
   });
   map.addLayer({
     id: 'place-labels-ancient', type: 'symbol', source: 'places',
     layout: { 'text-field': ['get', 'name'], 'text-offset': [0, 1.5], 'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 15], 'visibility': 'visible' },
-    paint: { 'text-color': '#1a1a1a', 'text-halo-color': '#fff', 'text-halo-width': 2 }
+    paint: { 'text-color': '#2c2c2c', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
   map.addLayer({
     id: 'place-labels-modern', type: 'symbol', source: 'places',
     filter: ['!=', ['get', 'modern_name'], ''],
     layout: { 'text-field': ['get', 'modern_name'], 'text-offset': [0, 2.8], 'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 15], 'visibility': 'visible' },
-    paint: { 'text-color': '#888888', 'text-halo-color': '#fff', 'text-halo-width': 2 }
+    paint: { 'text-color': '#8b7355', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
   map.addLayer({
     id: 'route-lines', type: 'line', source: 'routes',
-    paint: { 'line-color': '#e63946', 'line-width': 3, 'line-opacity': 0.8 }
+    paint: { 'line-color': '#c23b22', 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [8, 4] }
   });
   map.addLayer({
     id: 'route-arrows', type: 'symbol', source: 'routes',
-    layout: { 'symbol-placement': 'line', 'symbol-spacing': 120, 'text-field': '▶', 'text-size': 14 },
-    paint: { 'text-color': '#e63946' }
+    layout: { 'symbol-placement': 'line', 'symbol-spacing': 180, 'icon-image': 'arrowhead', 'icon-size': 0.8, 'icon-rotate': 90 },
+    paint: {}
   });
   // ── 部队块状箭头图层 ──
   map.addSource('unit-arrows', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -348,7 +377,7 @@ map.on('load', () => {
   map.addLayer({
     id: 'unit-arrow-fill', type: 'fill', source: 'unit-arrows',
     paint: {
-      'fill-color': ['match', ['get', 'faction'], '宋军', '#3b82f6', '金军', '#ef4444', '#888888'],
+      'fill-color': ['match', ['get', 'faction'], '宋', '#2b4c7e', '金', '#8b4513', '#5a7a6a'],
       'fill-opacity': ['match', ['get', 'status'], 'deploying', 0.5, 'marching', 0.75, 'engaging', 0.85, 'retreating', 0.3, 'routing', 0.35, 0.75],
       'fill-antialias': true
     }
@@ -356,7 +385,7 @@ map.on('load', () => {
   map.addLayer({
     id: 'unit-arrow-outline', type: 'line', source: 'unit-arrows',
     paint: {
-      'line-color': ['match', ['get', 'status'], 'engaging', '#ef4444', 'retreating', '#999', 'routing', '#ef4444', '#333'],
+      'line-color': ['match', ['get', 'status'], 'engaging', '#c23b22', 'retreating', '#999', 'routing', '#c23b22', '#2c2c2c'],
       'line-width': ['match', ['get', 'status'], 'engaging', 2.5, 'retreating', 1, 'routing', 1.5, 1.5],
       'line-dasharray': [1, 0],
       'line-opacity': ['match', ['get', 'status'], 'deploying', 0.7, 'routing', 0.5, 0.9]
@@ -369,14 +398,16 @@ map.on('load', () => {
   });
 
   map.addLayer({
-    id: 'places-chgis-dim', type: 'circle', source: 'places',
+    id: 'places-chgis-dim', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    paint: { 'circle-radius': ['step', ['zoom'], 1, 5, 4, 8, 8, 12, 12], 'circle-color': '#aaaaaa', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
+    layout: { 'icon-image': 'fortress-dim', 'icon-size': ['step', ['zoom'], 0.12, 5, 0.22, 8, 0.38, 12, 0.55], 'icon-allow-overlap': true },
+    paint: { 'icon-opacity': 0.35 }
   });
   map.addLayer({
-    id: 'places-llm-dim', type: 'circle', source: 'places',
+    id: 'places-llm-dim', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    paint: { 'circle-radius': ['step', ['zoom'], 1, 5, 4, 8, 8, 12, 12], 'circle-color': '#bbbbbb', 'circle-opacity': 0.35, 'circle-stroke-width': 1, 'circle-stroke-color': '#ddd' }
+    layout: { 'icon-image': 'camp-dim', 'icon-size': ['step', ['zoom'], 0.1, 5, 0.2, 8, 0.35, 12, 0.5], 'icon-allow-overlap': true },
+    paint: { 'icon-opacity': 0.35 }
   });
 
   map.on('click', 'places-chgis', (e) => showPopup(e));
@@ -388,6 +419,7 @@ map.on('load', () => {
   map.on('click', 'unit-arrow-fill', (e) => showUnitPopup(e));
   map.on('mouseenter', 'unit-arrow-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'unit-arrow-fill', () => { map.getCanvas().style.cursor = ''; });
+  console.log('[map.onload] icons, sources, layers all registered');
 
   // TODO: Phase 3 山川河流符号层
   // 扩展点：在 basemap 和数据层之间插入 terrain 符号图层组
@@ -395,6 +427,24 @@ map.on('load', () => {
   // const terrainSymbolSource = { type: 'geojson', data: {...} };
   // const terrainSymbolLayer = { id: 'terrain-symbols', type: 'symbol', source: 'terrain-symbols', ... };
 });
+
+// ── 自定义城池/营寨图标 ──
+function _makeIconSVG(type, color, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (type === 'fortress') {
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.strokeRect(3, 3, size-6, size-6);
+    ctx.strokeRect(7, 7, size-14, size-14);
+  } else {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(size/2, 3); ctx.lineTo(size-3, size-4); ctx.lineTo(3, size-4);
+    ctx.closePath(); ctx.fill();
+  }
+  return ctx.getImageData(0, 0, size, size);
+}
 
 function showPopup(e) {
   const props = e.features[0].properties;
@@ -409,6 +459,7 @@ function showPopup(e) {
 // ─── 模式切换 ───
 
 function switchToViewMode() {
+  console.log('[switchToViewMode] called, adding mode-view to body');
   document.body.classList.add('mode-view');
   document.getElementById('map-guide').classList.add('hidden');
   document.getElementById('error-msg-view').style.display = 'none';
@@ -643,6 +694,7 @@ function setStageState(stage, state) {
 async function analyze() {
   const text = document.getElementById('text-input').value.trim();
   if (!text) { showError('请输入战役文本或上传截图'); return; }
+  console.log('[analyze] starting, text length:', text.length);
   const submitBtn = document.getElementById('submit-btn');
   submitBtn.disabled = true;
   document.getElementById('error-msg-input').style.display = 'none';
@@ -673,7 +725,7 @@ async function analyze() {
         else if (line.startsWith('data: ')) {
           eventData = line.slice(6);
           if (eventType === 'progress' || eventType === 'result' || eventType === 'error') {
-            try { const data = JSON.parse(eventData); handleSSEEvent(eventType, data); } catch (_) {}
+            try { const data = JSON.parse(eventData); handleSSEEvent(eventType, data); } catch (e) { console.error('[SSE] handleSSEEvent error:', e.message, e.stack); }
           }
           eventType = ''; eventData = '';
         }
@@ -692,9 +744,10 @@ async function analyze() {
 
 function handleSSEEvent(type, data) {
   if (type === 'progress') {
-    setStageState(data.stage, 'ok' in data && !data.ok ? 'error' : 'done');
     const stageOrder = {'extract_done': 'extract', 'geocode_done': 'geocode', 'render_done': 'render'};
-    const idx = STAGES.indexOf(stageOrder[data.stage]);
+    const mappedStage = stageOrder[data.stage] || data.stage;
+    setStageState(mappedStage, 'ok' in data && !data.ok ? 'error' : 'done');
+    const idx = STAGES.indexOf(mappedStage);
     if (idx >= 0 && idx + 1 < STAGES.length) { setStageState(STAGES[idx + 1], 'active'); }
   } else if (type === 'error') {
     const stageMap = {extract: 'extract', geocode: 'geocode', render: 'render'};
@@ -702,6 +755,8 @@ function handleSSEEvent(type, data) {
     setStageState(stage, 'error');
     showError(data.message || '处理失败');
   } else if (type === 'result') {
+    console.log('[SSE] result received, data keys:', Object.keys(data));
+    console.log('[SSE] features count:', data.features?.length, 'geojson features:', data.geojson?.features?.length, 'scale:', data.scale);
     setStageState('render', 'done');
     _lastExtractData = data;
     _dataModified = false;
@@ -725,15 +780,16 @@ function handleSSEEvent(type, data) {
       document.getElementById('unit-card').style.display = 'none';
     }
     renderEditableResult(data);
-    updateMap(data);
-    // 自动切换到查看模式
+    // 自动切换到查看模式（先切换，保证面板可见）
     switchToViewMode();
+    updateMap(data);
   }
 }
 
 // ─── 可编辑结果面板 ───
 
 function renderEditableResult(data) {
+  console.log('[renderEditableResult] called, campaign:', data.campaign_name);
   const renderBtn = document.getElementById('render-btn');
   renderBtn.disabled = true;
   renderBtn.classList.remove('active');
@@ -869,17 +925,32 @@ async function reRender() {
 // ─── 地图更新 ───
 
 function updateMap(data) {
+  try {
+  console.log('[updateMap] called, geojson features:', data.geojson?.features?.length, 'scale:', data.scale);
   const geojsonFeatures = data.geojson.features || [];
   const placeFeatures = geojsonFeatures.filter(f => f.geometry.type === 'Point');
+  console.log('[updateMap] placeFeatures:', placeFeatures.length);
   const routeFeatures = geojsonFeatures.filter(f => f.geometry.type === 'LineString');
+  console.log('[updateMap] routeFeatures:', routeFeatures.length);
   const unitFeatures = geojsonFeatures.filter(f => f.geometry.type === 'Polygon');
+  console.log('[updateMap] unitFeatures:', unitFeatures.length);
+  console.log('[updateMap] checking source places:', !!map.getSource('places'));
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
+  console.log('[updateMap] places setData done');
+  console.log('[updateMap] checking source routes:', !!map.getSource('routes'));
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
+  console.log('[updateMap] routes setData done');
+  console.log('[updateMap] checking source unit-arrows:', !!map.getSource('unit-arrows'));
   map.getSource('unit-arrows').setData({ type: 'FeatureCollection', features: unitFeatures });
+  console.log('[updateMap] unit-arrows setData done');
   // 底图根据 scale 自动切换
+  console.log('[updateMap] basemapMode:', basemapMode, 'scale:', data.scale);
   if (basemapMode === 'auto' && data.scale) {
+    console.log('[updateMap] calling applyBasemap for:', SCALE_DEFAULT_BASEMAP[data.scale]);
     applyBasemap(SCALE_DEFAULT_BASEMAP[data.scale] || 'schematic');
+    console.log('[updateMap] applyBasemap done');
   }
+  console.log('[updateMap] fitBounds starting');
 
   if (placeFeatures.length > 0) {
     const bounds = new maplibregl.LngLatBounds();
@@ -890,6 +961,9 @@ function updateMap(data) {
     map.fitBounds(bounds, { padding: 60, maxZoom: maxZoom });
   }
   applyTimelineFilters();
+  } catch(e) {
+    console.error('[updateMap] ERROR:', e.message, e.stack);
+  }
 }
 
 function _safeFilter(layerId, filter) {

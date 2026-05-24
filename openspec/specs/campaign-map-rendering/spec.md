@@ -30,11 +30,12 @@
 
 ### Requirement: 交互式地图渲染
 
-系统 SHALL 使用 MapLibre GL JS 在浏览器中渲染交互式地图，底图使用纯色背景（仿古纸淡黄色 `#f5f0e1`）。地图 MUST 根据当前页面模式采用不同的初始状态，在 timeline 模式下支持按事件步骤增量渲染。
+系统 SHALL 使用 MapLibre GL JS 在浏览器中渲染交互式地图，底图由 Basemap Provider 架构根据 scale 自动选择（tactical→纯色 schematic，battle/strategic→低饱和 OSM muted_osm）。地图 MUST 根据当前页面模式采用不同的初始状态，在 timeline 模式下支持按事件步骤增量渲染。
 
 地图 MUST 支持：
 - 鼠标缩放（+/-）和拖拽平移
 - 按 `source` 字段区分地名标记样式（实心=CHGIS，空心=LLM 推断）
+- **地名标记使用 zoom 表达式动态调整 circle-radius 和 text-size**，远视角缩小、近视角放大
 - **CHGIS 精确匹配的地名标记通过两个独立文字标签层分别显示古地名和今地名**：古地名层（`place-labels-ancient`）显示深色粗体标签，今地名对照层（`place-labels-modern`）显示灰色斜体标签，LLM 推断地名仅在古地名层显示单行标签
 - **古地名标签层和今地名标签层可在地图图例区通过 checkbox 独立切换可见性**
 - 行军路线以带箭头线条展示
@@ -45,6 +46,8 @@
 - **部队箭头通过形态区分状态：待命（无箭尖矩形）、进军（完整箭头）、交战（箭头+红色粗边框）、撤退（细虚线反向箭）、溃散（碎裂散点）**
 - **部队箭头在 timeline 模式下根据当前 step 动态更新：仅 seq ≤ currentStep 且 status ≠ routing 的部队显示完整箭头；溃散部队在触发步骤后碎裂为散点并逐步淡出（三个步骤后完全消失）**
 - **多个部队关联同一地名时，箭头沿进攻方向平行错位避免重叠**
+- **箭头尺寸根据数据范围自适应**：尺寸 = 数据包围盒对角线 × scale 系数（tactical 20% / battle 8% / strategic 3%），确保不同范围下屏幕占比一致
+- **箭头形状优化为宽长比 1:3.5，头部占全长 40%**，视觉上更修长、方向感更强
 - **箭头根据 map scale 自适应：strategic 级别简化为细线箭头，tactical 级别展示完整宽箭身+详细标签**
 - **部队箭头图层可在地图图例区通过 checkbox 独立切换可见性**
 
@@ -120,6 +123,18 @@
 
 - **WHEN** 页面加载地图
 - **THEN** 地图渲染纯色背景（`#f5f0e1`），不发起任何外部瓦片网络请求
+
+
+#### Scenario: 战术级近视角标记放大
+
+- **WHEN** 地图 zoom ≥ 12（战术级近视角）
+- **THEN** 地名 circle-radius 为 14px，text-size 为 15px，便于识别单个战场细节
+
+
+#### Scenario: 底图根据 scale 自动选择
+
+- **WHEN** 提取结果 scale 为 battle 或 strategic
+- **THEN** 地图自动使用 `muted_osm` 低饱和 OSM 底图，提供地形参照
 
 ### Requirement: 提取结果面板
 

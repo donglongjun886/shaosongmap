@@ -409,7 +409,7 @@ map.on('load', () => {
   });
   map.addLayer({
     id: 'route-lines', type: 'line', source: 'routes',
-    paint: { 'line-color': '#c23b22', 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [8, 4], 'line-cap': 'butt' }
+    paint: { 'line-color': '#c23b22', 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [6, 3], 'line-cap': 'butt' }
   });
   map.addLayer({
     id: 'route-arrows', type: 'symbol', source: 'routes',
@@ -463,6 +463,13 @@ map.on('load', () => {
       'icon-image': 'arrowhead', 'icon-size': 0.5, 'icon-rotate': 90,
       'icon-allow-overlap': true
     }
+  });
+
+  // 路线端点锚点标记
+  map.addSource('route-anchors', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'route-anchors', type: 'circle', source: 'route-anchors',
+    paint: { 'circle-radius': 3, 'circle-color': '#c23b22', 'circle-opacity': 0.5, 'circle-stroke-width': 0 }
   });
 
   map.addLayer({
@@ -1149,8 +1156,8 @@ function _renderTerrainBlocks(features, scale) {
   }, beforeLayer);
 }
 
-function _makeComicUnitIcon(color, label, size) {
-  // 阵营色填充矩形框 + 白色文字
+function _makeComicUnitIcon(color, size) {
+  // 阵营色填充矩形框（纯色块，文字由独立标签层渲染）
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = Math.round(size * 0.6);
   const ctx = canvas.getContext('2d');
@@ -1165,13 +1172,6 @@ function _makeComicUnitIcon(color, label, size) {
   const bw = 2;
   ctx.fillStyle = color;
   ctx.fillRect(bw, bw, w - bw * 2, h - bw * 2);
-
-  // 白色文字
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold ' + Math.round(h * 0.55) + 'px "SimSun","Songti SC","KaiTi",serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, w / 2, h / 2);
 
   return ctx.getImageData(0, 0, w, h);
 }
@@ -1199,7 +1199,7 @@ function _applyComicRouteStyle(scale) {
   if (scale === 'tactical') {
     map.setPaintProperty('route-lines', 'line-width', 3.5);
     map.setPaintProperty('route-lines', 'line-cap', 'round');
-    map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [10, 5]]);
+    map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [6, 3]]);
     // 箭头尺寸放大 20% (6.3)
     if (map.getLayer('route-arrows')) {
       map.setLayoutProperty('route-arrows', 'icon-size', 0.96);
@@ -1217,7 +1217,7 @@ function _applyComicRouteStyle(scale) {
   } else {
     map.setPaintProperty('route-lines', 'line-width', 2.5);
     map.setPaintProperty('route-lines', 'line-cap', 'butt');
-    map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [8, 4]]);
+    map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [6, 3]]);
     if (map.getLayer('route-arrows')) {
       map.setLayoutProperty('route-arrows', 'icon-size', 0.8);
     }
@@ -1259,30 +1259,25 @@ function _renderComicUnitMarkers(unitBannerFeatures, scale) {
     try { if (map.hasImage(id)) map.removeImage(id); } catch(e) {}
   });
 
-  // Toggle 原部队旗帜图层：comic 主题下隐藏，非 comic 显示
+  // Toggle 原部队旗帜图层：comic 主题下隐藏标志和标签，方向线保持可见
   var origVisibility = (scale === 'tactical') ? 'none' : 'visible';
-  ['unit-banner-icon', 'unit-banner-label', 'unit-direction-line', 'unit-direction-arrow'].forEach(function(id) {
+  ['unit-banner-icon', 'unit-banner-label'].forEach(function(id) {
     _safeLayout(id, 'visibility', origVisibility);
   });
 
   if (scale !== 'tactical' || unitBannerFeatures.length === 0) {
-    // 确保原图层恢复显示
     return;
   }
 
-  // 为每个部队生成阵营色 icon
-  const iconMap = {};
-  unitBannerFeatures.forEach(function(f) {
-    const props = f.properties || {};
-    const faction = props.faction || '';
-    const status = props.status || '';
-    const color = status === 'engaging' ? '#e63946' : _factionColor(faction);
-    const key = status === 'engaging' ? 'comic-engaging' : (faction.indexOf('宋') >= 0 ? 'comic-song' : faction.indexOf('金') >= 0 ? 'comic-jin' : 'comic-unknown');
-    if (!iconMap[key]) {
-      const label = props.unit_name || '';
-      map.addImage(key, _makeComicUnitIcon(color, label.length > 6 ? label.substring(0, 6) + '..' : label, 120), { pixelRatio: 2 });
-      iconMap[key] = true;
-    }
+  // 按阵营/状态预生成通用图标（不包含文字，文字由独立标签层渲染）
+  var iconDefs = {
+    'comic-song': '#2b4c7e',
+    'comic-jin': '#c23b22',
+    'comic-unknown': '#2c2c2c',
+    'comic-engaging': '#e63946'
+  };
+  Object.keys(iconDefs).forEach(function(key) {
+    map.addImage(key, _makeComicUnitIcon(iconDefs[key], 120), { pixelRatio: 2 });
   });
 
   // 构建 GeoJSON：每个 feature 的 icon 指向对应阵营 icon
@@ -1335,6 +1330,14 @@ function _renderComicUnitMarkers(unitBannerFeatures, scale) {
       'text-halo-width': 2.0
     }
   });
+
+  // 注册 comic 部队标记的点击和悬停事件
+  map.off('click', 'comic-unit-icon');
+  map.on('click', 'comic-unit-icon', function(e) { showUnitPopup(e); });
+  map.off('mouseenter', 'comic-unit-icon');
+  map.on('mouseenter', 'comic-unit-icon', function() { map.getCanvas().style.cursor = 'pointer'; });
+  map.off('mouseleave', 'comic-unit-icon');
+  map.on('mouseleave', 'comic-unit-icon', function() { map.getCanvas().style.cursor = ''; });
 }
 
 function updateMap(data) {
@@ -1355,6 +1358,16 @@ function updateMap(data) {
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
   map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: unitBannerFeatures });
   map.getSource('unit-directions').setData({ type: 'FeatureCollection', features: unitDirectionFeatures });
+  // 路线端点锚点：从每条 LineString 提取首末坐标
+  var anchorFeatures = [];
+  routeFeatures.forEach(function(f) {
+    var coords = f.geometry && f.geometry.coordinates;
+    if (coords && coords.length >= 2) {
+      anchorFeatures.push({ type: 'Feature', geometry: { type: 'Point', coordinates: coords[0] }, properties: {} });
+      anchorFeatures.push({ type: 'Feature', geometry: { type: 'Point', coordinates: coords[coords.length - 1] }, properties: {} });
+    }
+  });
+  map.getSource('route-anchors').setData({ type: 'FeatureCollection', features: anchorFeatures });
   // 底图根据 scale 自动切换
   console.log('[updateMap] basemapMode:', basemapMode, 'scale:', data.scale);
   if (basemapMode === 'auto' && data.scale) {
@@ -1442,6 +1455,8 @@ function toggleUnitLayers(visible) {
   _safeLayout('unit-banner-label', 'visibility', v);
   _safeLayout('unit-direction-line', 'visibility', v);
   _safeLayout('unit-direction-arrow', 'visibility', v);
+  _safeLayout('comic-unit-icon', 'visibility', v);
+  _safeLayout('comic-unit-label', 'visibility', v);
 }
 
 function showUnitPopup(e) {

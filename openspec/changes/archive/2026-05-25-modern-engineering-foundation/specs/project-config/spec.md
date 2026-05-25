@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: pyproject.toml 项目配置
 
@@ -6,7 +6,7 @@
 
 `pyproject.toml` MUST 包含：
 - `[project]` 节：名称（shaosongmap）、版本（0.1.0）、Python 版本要求（>=3.10）、依赖列表
-- `[dependency-groups]` 节：dev（开发工具集）依赖分组
+- `[dependency-groups]` 节：dev（开发工具集）和 test（CI 测试集）依赖分组
 - `[tool.pytest.ini_options]` 节：pytest 运行参数和覆盖率配置
 - `[tool.ruff]` 节：代码格式化和 Lint 规则配置
 - `[tool.ruff.format]` 节：格式化参数（单引号、100 列宽）
@@ -25,6 +25,8 @@
 - **WHEN** 开发者运行 `uv sync`
 - **THEN** uv 根据 `pyproject.toml` 和 `uv.lock` 安装所有项目依赖和开发依赖
 
+## ADDED Requirements
+
 ### Requirement: .editorconfig 编辑器统一配置
 
 系统 SHALL 在项目根目录提供 `.editorconfig` 文件，统一不同编辑器的缩进、换行符和字符编码设置。
@@ -37,25 +39,3 @@
 
 - **WHEN** 开发者分别用 VS Code 和 PyCharm 打开同一 Python 文件
 - **THEN** 两者使用相同的缩进（4 空格）和换行符（LF），避免格式冲突
-
-### Requirement: .env.example 环境变量模板
-
-系统 SHALL 在项目根目录提供 `.env.example` 文件，列出项目所需的所有环境变量及其用途说明，变量值使用占位符。
-
-`.env.example` MUST 包含：
-- `DEEPSEEK_API_KEY`：DeepSeek API 密钥
-- `DEEPSEEK_BASE_URL`：DeepSeek API 地址（默认值）
-
-#### Scenario: 新开发者配置环境
-
-- **WHEN** 新开发者 clone 项目后
-- **THEN** 复制 `.env.example` 为 `.env`，填入自己的 API Key 即可启动
-
-### Requirement: 测试截图优化
-
-系统 SHALL 将 `test_screenshot.png` 文件大小控制在 100KB 以内，通过降低分辨率实现而不影响 OCR 测试有效性。
-
-#### Scenario: Clone 速度优化
-
-- **WHEN** 开发者 clone 仓库
-- **THEN** 测试截图文件不超过 100KB，不显著影响 clone 速度

@@ -9,36 +9,59 @@ import numpy as np
 from PIL import Image
 
 _UI_KEYWORDS = {
-    "上一章", "下一章", "目录", "书架", "设置", "评论", "分享",
-    "打赏", "投票", "推荐票", "月票", "订阅", "加入书架",
-    "下载", "听书", "全文搜索", "书签", "笔记", "本章说",
-    "发表评论", "查看更多", "举报", "催更", "加更", "追书",
-    "夜间", "白天", "字体", "字号", "亮度",
-    "讨论热烈", "本章含", "条段评", "段评", "起点中文网",
+    '上一章',
+    '下一章',
+    '目录',
+    '书架',
+    '设置',
+    '评论',
+    '分享',
+    '打赏',
+    '投票',
+    '推荐票',
+    '月票',
+    '订阅',
+    '加入书架',
+    '下载',
+    '听书',
+    '全文搜索',
+    '书签',
+    '笔记',
+    '本章说',
+    '发表评论',
+    '查看更多',
+    '举报',
+    '催更',
+    '加更',
+    '追书',
+    '夜间',
+    '白天',
+    '字体',
+    '字号',
+    '亮度',
+    '讨论热烈',
+    '本章含',
+    '条段评',
+    '段评',
+    '起点中文网',
 }
 
 # 起点 App 顶部信息栏正则：匹配 "书名 作者 品X字 日期 时间" 格式
-_BOOK_INFO_PATTERN = re.compile(
-    r"品?\d+字\d{4}年\d{1,2}月\d{1,2}日\d{1,2}[:：]\d{2}"
-)
+_BOOK_INFO_PATTERN = re.compile(r'品?\d+字\d{4}年\d{1,2}月\d{1,2}日\d{1,2}[:：]\d{2}')
 
 # 评论区噪音正则：如 "?讨论热烈：本章含2672条段评"
-_COMMENT_HEADER_PATTERN = re.compile(
-    r"讨论热烈.*本章含\d+条段评"
-)
+_COMMENT_HEADER_PATTERN = re.compile(r'讨论热烈.*本章含\d+条段评')
 
 # Unicode 上标数字：¹²³⁴⁵⁶⁷⁸⁹⁰（起点评论区编号）
-_SUPERSCRIPT_DIGITS = re.compile(r"[¹²³⁴⁵⁶⁷⁸⁹⁰]+")
+_SUPERSCRIPT_DIGITS = re.compile(r'[¹²³⁴⁵⁶⁷⁸⁹⁰]+')
 
 # 方括号评论编号：[1]、[23]、[1,2]、[3,4,5] 等
-_BRACKET_COMMENT = re.compile(r"\[\d+(?:,\d+)*\]")
+_BRACKET_COMMENT = re.compile(r'\[\d+(?:,\d+)*\]')
 
 # 句末标点后的孤立评论数字：针对 OCR 将小号上标数字识别为普通 inline 数字的场景
 # 匹配：。！？… 或连续2+英文句点 + 1~3位数字 + 紧随中文字符
 # 排除数字后紧跟数量词（万/千/百/十/余/数/两/几），避免误删"5万"、"10余"等
-_POST_PUNCT_DIGITS = re.compile(
-    r"([。！？…]|\.{2,})\d{1,3}(?![万千百十余数两几])(?=[一-鿿])"
-)
+_POST_PUNCT_DIGITS = re.compile(r'([。！？…]|\.{2,})\d{1,3}(?![万千百十余数两几])(?=[一-鿿])')
 
 _MIN_TEXT_LENGTH = 50
 
@@ -46,13 +69,14 @@ _MIN_TEXT_LENGTH = 50
 def _init_ocr():
     """延迟初始化 PaddleOCR（首次调用时加载模型）。"""
     from paddleocr import PaddleOCR
+
     return PaddleOCR(
-        lang="ch",
+        lang='ch',
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=False,
         text_det_limit_side_len=720,
-        text_det_limit_type="max",
+        text_det_limit_type='max',
         text_det_thresh=0.4,
         text_det_box_thresh=0.5,
         text_recognition_batch_size=8,
@@ -76,6 +100,7 @@ def _preprocess_image(image: Image.Image) -> Image.Image:
     几乎不影响识别准确率，但可大幅减少检测耗时。
     """
     import logging
+
     logger = logging.getLogger(__name__)
     max_dim = 1600
     w, h = image.size
@@ -85,9 +110,8 @@ def _preprocess_image(image: Image.Image) -> Image.Image:
     scale = max_dim / long_side
     new_w = int(w * scale)
     new_h = int(h * scale)
-    logger.info("图片缩放: %dx%d → %dx%d (提速约 %.0f%%)",
-                w, h, new_w, new_h, (1 - scale**2) * 100)
-    return image.resize((new_w, new_h), Image.LANCZOS)
+    logger.info('图片缩放: %dx%d → %dx%d (提速约 %.0f%%)', w, h, new_w, new_h, (1 - scale**2) * 100)
+    return image.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
 
 def _remove_comment_markers(text: str) -> str:
@@ -98,9 +122,9 @@ def _remove_comment_markers(text: str) -> str:
     2. 方括号评论编号（[1]、[23]、[1,2]、[3,4,5]）—— 评论链接的另一种 OCR 形态
     3. 句末标点后的孤立数字（。14、。5、……122）—— OCR 将小号上标识别为普通数字
     """
-    text = _SUPERSCRIPT_DIGITS.sub("", text)
-    text = _BRACKET_COMMENT.sub("", text)
-    text = _POST_PUNCT_DIGITS.sub(r"\1", text)
+    text = _SUPERSCRIPT_DIGITS.sub('', text)
+    text = _BRACKET_COMMENT.sub('', text)
+    text = _POST_PUNCT_DIGITS.sub(r'\1', text)
     return text
 
 
@@ -127,8 +151,8 @@ def _clean_text(raw_lines: list[str]) -> str:
             continue
 
         # 统计中文字符数
-        chinese_chars = len(re.findall(r"[一-鿿]", line))
-        total_chars = len(line.replace(" ", ""))
+        chinese_chars = len(re.findall(r'[一-鿿]', line))
+        total_chars = len(line.replace(' ', ''))
 
         # 太短的行跳过
         if chinese_chars < 6:
@@ -157,7 +181,7 @@ def _clean_text(raw_lines: list[str]) -> str:
         cleaned.append(line_clean)
 
     # 合并为连续段落
-    text = "".join(cleaned)
+    text = ''.join(cleaned)
     # 移除起点评论区上标数字标记
     text = _remove_comment_markers(text)
     return text
@@ -173,8 +197,8 @@ def recognize(image_bytes: bytes) -> list[str]:
         OCR 识别的每行文本
     """
     # 将 bytes 转换为 numpy array（PaddleOCR 3.x 要求）
-    image = Image.open(io.BytesIO(image_bytes))
-    image = image.convert("RGB")
+    image: Image.Image = Image.open(io.BytesIO(image_bytes))
+    image = image.convert('RGB')
     # 预处理：大图缩放到合理尺寸，加速检测
     image = _preprocess_image(image)
     image_np = np.array(image)
@@ -186,7 +210,7 @@ def recognize(image_bytes: bytes) -> list[str]:
 
     result = results[0]
     # PaddleOCR 3.x 返回 dict-like OCRResult，识别的文本在 rec_texts 中
-    rec_texts = result["rec_texts"]
+    rec_texts = result['rec_texts']
     lines: list[str] = []
     for text in rec_texts:
         if text.strip():
@@ -241,7 +265,7 @@ def merge_texts(texts: list[str]) -> tuple[str, int]:
         (拼接后完整文本, 去除的重复字符总数)
     """
     if not texts:
-        return "", 0
+        return '', 0
     if len(texts) == 1:
         return texts[0], 0
 
@@ -257,10 +281,10 @@ def merge_texts(texts: list[str]) -> tuple[str, int]:
         start_s2, length = _longest_common_substring(tail, head)
 
         if length >= 5:
-            overlap = head[start_s2:start_s2 + length]
+            overlap = head[start_s2 : start_s2 + length]
             idx = next_text.find(overlap)
             if idx >= 0:
-                next_text = next_text[idx + length:]
+                next_text = next_text[idx + length :]
                 total_removed += length
 
         result += next_text
@@ -286,14 +310,13 @@ def ocr_main(image_bytes: bytes) -> tuple[str, int]:
     raw_lines = recognize(image_bytes)
 
     if not raw_lines:
-        raise ValueError("未能识别到任何文字，请检查截图是否清晰")
+        raise ValueError('未能识别到任何文字，请检查截图是否清晰')
 
     text = _clean_text(raw_lines)
 
     if len(text) < _MIN_TEXT_LENGTH:
         raise ValueError(
-            f"未能从截图中提取到足够的文本（仅 {len(text)} 字符），"
-            "请确保截图包含正文内容"
+            f'未能从截图中提取到足够的文本（仅 {len(text)} 字符），请确保截图包含正文内容'
         )
 
     return text, len(raw_lines)

@@ -7,7 +7,6 @@ import json
 import os
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -17,8 +16,8 @@ load_dotenv()
 from shaosongmap.models import GeoFeature, Place
 
 # CHGIS CSV 文件预期位于此路径
-_CHGIS_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "chgis_v6"
-_CHGIS_V6_CSV = _CHGIS_DATA_DIR / "chgis_v6_points.csv"
+_CHGIS_DATA_DIR = Path(__file__).resolve().parent.parent / 'data' / 'chgis_v6'
+_CHGIS_V6_CSV = _CHGIS_DATA_DIR / 'chgis_v6_points.csv'
 
 # 用于 LLM 推断坐标的提示词
 _INFER_PROMPT = """你是一位中国历史地理专家，熟悉中国古代地名和山川河流的位置。
@@ -67,31 +66,32 @@ def _load_chgis_data() -> list[dict]:
     """
     if not _CHGIS_V6_CSV.exists():
         raise FileNotFoundError(
-            f"CHGIS v6 数据文件不存在: {_CHGIS_V6_CSV}\n"
-            "请将 CHGIS v6 点数据放置于此路径"
+            f'CHGIS v6 数据文件不存在: {_CHGIS_V6_CSV}\n请将 CHGIS v6 点数据放置于此路径'
         )
     records = []
-    with open(_CHGIS_V6_CSV, encoding="utf-8") as f:
+    with open(_CHGIS_V6_CSV, encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            records.append({
-                "name_ch": row.get("name_ch", ""),
-                "lng": float(row.get("x_coord", 0)),
-                "lat": float(row.get("y_coord", 0)),
-                "beg_yr": int(row.get("beg_yr", 0)),
-                "end_yr": int(row.get("end_yr", 9999)),
-                "lev": row.get("lev", ""),
-                "modern_name": row.get("modern_name", ""),
-            })
+            records.append(
+                {
+                    'name_ch': row.get('name_ch', ''),
+                    'lng': float(row.get('x_coord', 0)),
+                    'lat': float(row.get('y_coord', 0)),
+                    'beg_yr': int(row.get('beg_yr', 0)),
+                    'end_yr': int(row.get('end_yr', 9999)),
+                    'lev': row.get('lev', ''),
+                    'modern_name': row.get('modern_name', ''),
+                }
+            )
     return records
 
 
 def match_chgis(
     place_name: str,
-    dynasty_beg_yr: Optional[int] = None,
-    dynasty_end_yr: Optional[int] = None,
+    dynasty_beg_yr: int | None = None,
+    dynasty_end_yr: int | None = None,
     threshold: float = 0.8,
-) -> Optional[GeoFeature]:
+) -> GeoFeature | None:
     """在 CHGIS v6 数据集中匹配古地名的经纬度坐标。
 
     匹配策略：
@@ -112,7 +112,7 @@ def match_chgis(
     candidates: list[tuple[float, dict]] = []
 
     for rec in records:
-        score = _fuzzy_match(place_name, rec["name_ch"])
+        score = _fuzzy_match(place_name, rec['name_ch'])
         if score >= threshold:
             candidates.append((score, rec))
 
@@ -124,32 +124,32 @@ def match_chgis(
 
     # 如果有朝代限制，按时间重叠过滤
     if dynasty_beg_yr and dynasty_end_yr:
-        for score, rec in candidates:
+        for _score, rec in candidates:
             # 地名存在时间与目标朝代有交集
-            if rec["beg_yr"] <= dynasty_end_yr and rec["end_yr"] >= dynasty_beg_yr:
+            if rec['beg_yr'] <= dynasty_end_yr and rec['end_yr'] >= dynasty_beg_yr:
                 return GeoFeature(
                     name=place_name,
-                    lng=rec["lng"],
-                    lat=rec["lat"],
-                    source="chgis",
-                    modern_name=rec.get("modern_name"),
+                    lng=rec['lng'],
+                    lat=rec['lat'],
+                    source='chgis',
+                    modern_name=rec.get('modern_name'),
                 )
 
     # 无朝代限制或没有时间匹配的，返回得分最高的
     best_score, best_rec = candidates[0]
     return GeoFeature(
         name=place_name,
-        lng=best_rec["lng"],
-        lat=best_rec["lat"],
-        source="chgis",
-        modern_name=best_rec.get("modern_name"),
+        lng=best_rec['lng'],
+        lat=best_rec['lat'],
+        source='chgis',
+        modern_name=best_rec.get('modern_name'),
     )
 
 
 def infer_with_llm(
     place_names: list[str],
     context_text: str,
-    model: str = "deepseek-chat",
+    model: str = 'deepseek-chat',
 ) -> list[GeoFeature]:
     """调用 LLM 根据上下文推断地名近似坐标。
 
@@ -164,70 +164,66 @@ def infer_with_llm(
     if not place_names:
         return []
 
-    api_key = os.getenv("DEEPSEEK_API_KEY", "")
-    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    api_key = os.getenv('DEEPSEEK_API_KEY', '')
+    base_url = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
     if not api_key:
-        raise ValueError("请设置环境变量 DEEPSEEK_API_KEY")
+        raise ValueError('请设置环境变量 DEEPSEEK_API_KEY')
 
     client = OpenAI(api_key=api_key, base_url=base_url)
     prompt = _INFER_PROMPT.format(
         context=context_text,
-        places="\n".join(f"- {p}" for p in place_names),
+        places='\n'.join(f'- {p}' for p in place_names),
     )
 
     response = client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{'role': 'user', 'content': prompt}],
         temperature=0.3,
-        response_format={"type": "json_object"},
+        response_format={'type': 'json_object'},
     )
 
     raw = response.choices[0].message.content
     if not raw:
         # LLM 无响应时，全部标记为 unknown
-        return [
-            GeoFeature(name=name, source="unknown")
-            for name in place_names
-        ]
+        return [GeoFeature(name=name, source='unknown') for name in place_names]
 
     try:
         data = json.loads(raw)
         # LLM 可能返回 {"result": [...]} 或直接返回数组
-        items = data if isinstance(data, list) else data.get("result", [])
+        items = data if isinstance(data, list) else data.get('result', [])
     except json.JSONDecodeError:
-        return [
-            GeoFeature(name=name, source="unknown")
-            for name in place_names
-        ]
+        return [GeoFeature(name=name, source='unknown') for name in place_names]
 
     results: list[GeoFeature] = []
     for item in items:
-        name = item.get("name", "")
+        name = item.get('name', '')
         try:
-            results.append(GeoFeature(
-                name=name,
-                lng=item.get("lng"),
-                lat=item.get("lat"),
-                source="llm_infer",
-                confidence=item.get("confidence", "low"),
-            ))
+            results.append(
+                GeoFeature(
+                    name=name,
+                    lng=item.get('lng'),
+                    lat=item.get('lat'),
+                    source='llm_infer',
+                    confidence=item.get('confidence', 'low'),
+                )
+            )
         except Exception:
-            results.append(GeoFeature(name=name, source="unknown"))
+            results.append(GeoFeature(name=name, source='unknown'))
 
     # 确保不遗漏输入中但 LLM 未返回的地名
     returned_names = {r.name for r in results}
     for name in place_names:
         if name not in returned_names:
-            results.append(GeoFeature(name=name, source="unknown"))
+            results.append(GeoFeature(name=name, source='unknown'))
 
     return results
 
 
 def geocode(
     places: list[Place],
-    context_text: str = "",
-    dynasty_beg_yr: Optional[int] = None,
-    dynasty_end_yr: Optional[int] = None,
+    context_text: str = '',
+    dynasty_beg_yr: int | None = None,
+    dynasty_end_yr: int | None = None,
 ) -> list[GeoFeature]:
     """遍历地名列表，优先 CHGIS 匹配，失败则 LLM 推断。
 

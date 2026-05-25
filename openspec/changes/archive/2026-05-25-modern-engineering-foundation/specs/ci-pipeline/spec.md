@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: GitHub Actions 自动测试
 
@@ -46,12 +46,13 @@
 - **WHEN** 开发者提交包含 `shell=True` 的 subprocess 调用
 - **THEN** CI 在 Stage 4 标记为失败，报告漏洞类型和文件位置
 
-### Requirement: CI 依赖管理
+### Requirement: CI 轻量依赖文件
 
 系统 SHALL 通过 pyproject.toml 的 `[dependency-groups]` 管理 CI 依赖，废弃 `requirements-ci.txt`。
 
 uv 依赖组 MUST 区分：
 - `[dependency-groups].dev`：开发工具（ruff、mypy、pytest、pytest-cov、bandit、pre-commit）
+- `[dependency-groups].test`：CI 测试专用（pytest、pytest-cov、pytest-httpx、httpx）
 
 CI 工作流中 SHALL 使用 `uv sync --group dev` 安装所有质量工具。
 

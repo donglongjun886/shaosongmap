@@ -7,21 +7,45 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.10"
+      - name: Run ruff check
+        run: uv run ruff check .
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-ci.txt
+  type-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.10"
+      - name: Run mypy
+        run: uv run mypy app.py shaosongmap/
 
-      - name: Run tests
-        run: DEEPSEEK_API_KEY=test-key PYTHONPATH=. pytest tests/ -v
+  test:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.10"
+      - name: Run tests with coverage
+        run: DEEPSEEK_API_KEY=test-key PYTHONPATH=. uv run pytest tests/ -v --cov=shaosongmap --cov-fail-under=70
+
+  security:
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.10"
+      - name: Run bandit
+        run: uv run bandit -r shaosongmap/ app.py -ll

@@ -27,13 +27,13 @@ from openai import OpenAI
 
 load_dotenv()
 
-BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DEFAULT_MODEL = "qwen-vl-plus"
-REVIEW_MODEL = "qwen-vl-max"
+BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+DEFAULT_MODEL = 'qwen-vl-plus'
+REVIEW_MODEL = 'qwen-vl-max'
 
 DEFAULT_QUESTION = (
-    "请仔细观察这张截图，描述你看到的内容。"
-    "如果有任何视觉问题（布局错位、颜色异常、元素重叠、缺失、文字截断等），请逐一指出。"
+    '请仔细观察这张截图，描述你看到的内容。'
+    '如果有任何视觉问题（布局错位、颜色异常、元素重叠、缺失、文字截断等），请逐一指出。'
 )
 
 REVIEW_SYSTEM = """你是一位资深 UI/UX 审查专家，专门审查历史地图可视化应用的界面截图。
@@ -64,22 +64,22 @@ def _image_to_base64(image_path: str) -> str:
     """将图片文件编码为 base64 data URL。"""
     path = Path(image_path)
     if not path.exists():
-        raise FileNotFoundError(f"图片文件不存在: {image_path}")
+        raise FileNotFoundError(f'图片文件不存在: {image_path}')
 
     ext = path.suffix.lower()
     mime_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
     }
     mime = mime_map.get(ext)
     if not mime:
-        raise ValueError(f"不支持的图片格式: {ext}，支持 png/jpg/jpeg/webp")
+        raise ValueError(f'不支持的图片格式: {ext}，支持 png/jpg/jpeg/webp')
 
     data = path.read_bytes()
-    b64 = base64.b64encode(data).decode("utf-8")
-    return f"data:{mime};base64,{b64}"
+    b64 = base64.b64encode(data).decode('utf-8')
+    return f'data:{mime};base64,{b64}'
 
 
 def analyze(
@@ -89,9 +89,9 @@ def analyze(
     max_tokens: int = 2000,
 ) -> str:
     """调用 Qwen-VL 分析图片并返回文字描述。"""
-    api_key = os.getenv("DASHSCOPE_API_KEY", "")
+    api_key = os.getenv('DASHSCOPE_API_KEY', '')
     if not api_key:
-        raise ValueError("请设置环境变量 DASHSCOPE_API_KEY（阿里云百炼 API Key）")
+        raise ValueError('请设置环境变量 DASHSCOPE_API_KEY（阿里云百炼 API Key）')
 
     data_url = _image_to_base64(image_path)
     prompt = question or DEFAULT_QUESTION
@@ -99,10 +99,10 @@ def analyze(
     client = OpenAI(api_key=api_key, base_url=BASE_URL)
     messages: list[dict] = [
         {
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": data_url}},
-                {"type": "text", "text": prompt},
+            'role': 'user',
+            'content': [
+                {'type': 'image_url', 'image_url': {'url': data_url}},
+                {'type': 'text', 'text': prompt},
             ],
         }
     ]
@@ -115,7 +115,7 @@ def analyze(
     )
 
     content = response.choices[0].message.content
-    return content.strip() if content else "（模型返回空内容）"
+    return content.strip() if content else '（模型返回空内容）'
 
 
 def review(
@@ -130,12 +130,12 @@ def review(
         focus: 可选的关注区域（如「只看时间轴面板」）
         model: 模型名称，默认 qwen-vl-max
     """
-    focus_line = f"\n本次审查请重点关注：{focus}" if focus else ""
-    user_prompt = f"请审查这张应用截图，输出结构化审查报告。{focus_line}"
+    focus_line = f'\n本次审查请重点关注：{focus}' if focus else ''
+    user_prompt = f'请审查这张应用截图，输出结构化审查报告。{focus_line}'
 
-    api_key = os.getenv("DASHSCOPE_API_KEY", "")
+    api_key = os.getenv('DASHSCOPE_API_KEY', '')
     if not api_key:
-        raise ValueError("请设置环境变量 DASHSCOPE_API_KEY（阿里云百炼 API Key）")
+        raise ValueError('请设置环境变量 DASHSCOPE_API_KEY（阿里云百炼 API Key）')
 
     data_url = _image_to_base64(image_path)
 
@@ -143,12 +143,12 @@ def review(
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": REVIEW_SYSTEM},
+            {'role': 'system', 'content': REVIEW_SYSTEM},
             {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                    {"type": "text", "text": user_prompt},
+                'role': 'user',
+                'content': [
+                    {'type': 'image_url', 'image_url': {'url': data_url}},
+                    {'type': 'text', 'text': user_prompt},
                 ],
             },
         ],
@@ -157,12 +157,12 @@ def review(
     )
 
     content = response.choices[0].message.content
-    return content.strip() if content else "（模型返回空内容）"
+    return content.strip() if content else '（模型返回空内容）'
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="视觉模型辅助工具：看图分析 / UI 审查",
+        description='视觉模型辅助工具：看图分析 / UI 审查',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -172,13 +172,16 @@ def main() -> None:
   python scripts/vision.py --review screenshot.png "只看旗帜标记"
         """,
     )
-    parser.add_argument("image", help="图片文件路径")
-    parser.add_argument("question", nargs="?", default=None, help="具体问题（可选）")
+    parser.add_argument('image', help='图片文件路径')
+    parser.add_argument('question', nargs='?', default=None, help='具体问题（可选）')
     parser.add_argument(
-        "--review", "-r", action="store_true", help="启用 Review 模式，输出结构化审查报告"
+        '--review', '-r', action='store_true', help='启用 Review 模式，输出结构化审查报告'
     )
     parser.add_argument(
-        "--model", "-m", default=None, help=f"模型名称（默认: 通用模式={DEFAULT_MODEL}, Review模式={REVIEW_MODEL}）"
+        '--model',
+        '-m',
+        default=None,
+        help=f'模型名称（默认: 通用模式={DEFAULT_MODEL}, Review模式={REVIEW_MODEL}）',
     )
     args = parser.parse_args()
 
@@ -191,12 +194,12 @@ def main() -> None:
             result = analyze(args.image, question=args.question, model=model)
         print(result)
     except FileNotFoundError as e:
-        print(f"错误: {e}", file=sys.stderr)
+        print(f'错误: {e}', file=sys.stderr)
         sys.exit(1)
     except ValueError as e:
-        print(f"错误: {e}", file=sys.stderr)
+        print(f'错误: {e}', file=sys.stderr)
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

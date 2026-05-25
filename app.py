@@ -456,7 +456,8 @@ def _compute_unit_offsets(
 ) -> dict[str, list[float]]:
     """计算同名地多部队的平行错位偏移。
 
-    同一地点有多个部队时，沿垂直于进攻方向做平行错位。
+    同一地点有多个部队时，统一沿南北方向做平行错位展开，
+    避免各部队方向角不同导致偏移方向不一致而重叠。
 
     Returns:
         映射: unit_name → [offset_lng, offset_lat]
@@ -469,11 +470,6 @@ def _compute_unit_offsets(
         if feat.lng is not None and feat.lat is not None:
             coord_map[feat.name] = [feat.lng, feat.lat]
 
-    # 建立部队名→进攻方向映射
-    dir_map: dict[str, float] = {}
-    for u in units:
-        dir_map[u.name] = _angle_for_direction(u.direction)
-
     # 统计每个坐标点有多少部队（按实际坐标分组，而非地名）
     coord_units: dict[tuple[float, float], list[str]] = {}
     for us in unit_states:
@@ -484,13 +480,9 @@ def _compute_unit_offsets(
             if us.unit_name not in coord_units[coord]:
                 coord_units[coord].append(us.unit_name)
 
-    # 为每个部队计算偏移
-    offsets: dict[str, list[float]] = {}
-    # 旗帜间距：基于 body_width 自适应（约1.2倍标识宽度）
-    # body_width 由 _make_unit_geojson 中 diagonal × ratio / 3.5 得出
-    scale_ratio_w = {"tactical": 0.20, "battle": 0.08, "strategic": 0.03}
+    # 旗帜间距估算
+    scale_ratio_w = {"tactical": 0.10, "battle": 0.08, "strategic": 0.03}
     ratio_w = scale_ratio_w.get(scale, 0.08)
-    # 粗略估算 body_width（不重复完整对角线计算）
     lngs = [c[0] for c in coord_map.values() if c[0] is not None]
     lats = [c[1] for c in coord_map.values() if c[1] is not None]
     if len(lngs) >= 2:
@@ -504,25 +496,18 @@ def _compute_unit_offsets(
     body_width_est = max(diag * ratio_w / 3.5, 22.0)
     arrow_spacing_m = body_width_est * 1.2
 
+    offsets: dict[str, list[float]] = {}
     for coord, unit_names in coord_units.items():
         if len(unit_names) <= 1:
-            continue  # 不需要偏移
+            continue
         base = list(coord)
-        lat_rad = math.radians(base[1])
-        deg_per_m_lng = 1.0 / (111320.0 * math.cos(lat_rad))
         deg_per_m_lat = 1.0 / 111320.0
 
         for i, uname in enumerate(unit_names):
-            # 平行错位：沿垂直方向偏移
-            angle = dir_map.get(uname, 0.0)
-            perp_rad = math.radians(angle + 90)
-            # 以中心为基准，向两侧展开
+            # 统一沿南北方向错位展开，以中心为基准向两侧分布
             offset_idx = (i - (len(unit_names) - 1) / 2) * 1.2
             offset_m = offset_idx * arrow_spacing_m
-            offsets[uname] = [
-                offset_m * math.cos(perp_rad) * deg_per_m_lng,
-                offset_m * math.sin(perp_rad) * deg_per_m_lat,
-            ]
+            offsets[uname] = [0.0, offset_m * deg_per_m_lat]
 
     return offsets
 
@@ -535,7 +520,8 @@ def _make_unit_geojson(
 ) -> list[dict]:
     """为部队生成汉代《驻军图》风格旗帜标记 GeoJSON 特征列表。
 
-    每个部队状态生成一个 Point（旗帜位置）+ 一个 LineString（方向指示线）。
+    每个步骤只渲染每个部队的「最新状态」（seq <= 当前步骤的最新 unit_state），
+    避免同一部队在多个历史位置同时显示。
     """
     from collections import defaultdict
 
@@ -545,7 +531,7 @@ def _make_unit_geojson(
         if feat.lng is not None and feat.lat is not None:
             coord_map[feat.name] = [feat.lng, feat.lat]
 
-    # 计算同地多部队偏移
+    # 计算同地多部队偏移（基于所有状态一次算出，偏移量不随步骤变化）
     offsets = _compute_unit_offsets(unit_states, units, features, scale)
 
     # 计算数据范围对角线，用于自适应方向线长度
@@ -554,7 +540,7 @@ def _make_unit_geojson(
         for feat in features if feat.lng is not None and feat.lat is not None
     ]
     diagonal_m = _compute_data_diagonal(place_coords)
-    scale_ratio = {"tactical": 0.20, "battle": 0.08, "strategic": 0.03}
+    scale_ratio = {"tactical": 0.10, "battle": 0.08, "strategic": 0.03}
     ratio = scale_ratio.get(scale, 0.08)
     direction_len_m = diagonal_m * ratio
     direction_len_m = max(direction_len_m, 500.0)   # 最小500m
@@ -563,33 +549,49 @@ def _make_unit_geojson(
     # 建立部队名→部队对象映射
     unit_map: dict[str, ForceUnit] = {u.name: u for u in units}
 
-    # 按 seq 分组 unit_states
+    # 按 seq 分组 unit_states，同时记录所有步骤号
     seq_states: dict[int, list[UnitState]] = defaultdict(list)
+    all_seqs: set[int] = set()
     for us in unit_states:
         seq_states[us.seq].append(us)
+        all_seqs.add(us.seq)
 
+    if not all_seqs:
+        return []
+
+    max_seq = max(all_seqs)
     geojson_features: list[dict] = []
 
-    for seq, states in sorted(seq_states.items()):
-        for us in states:
-            unit = unit_map.get(us.unit_name)
+    # 对每个步骤，计算每个部队的「有效状态」（最新且 ≤ 当前步骤）
+    for current_seq in sorted(all_seqs):
+        # 为每个部队找到最新的 unit_state (seq <= current_seq)
+        effective: dict[str, UnitState] = {}
+        for us in unit_states:
+            if us.seq > current_seq:
+                continue
+            if us.unit_name not in effective or us.seq > effective[us.unit_name].seq:
+                effective[us.unit_name] = us
+
+        for unit_name, us in effective.items():
+            unit = unit_map.get(unit_name)
             location = us.location
             if not location or location not in coord_map:
                 continue
 
             base = coord_map[location]
-            offset = offsets.get(us.unit_name, [0, 0])
+            offset = offsets.get(unit_name, [0, 0])
             anchor_lng = base[0] + offset[0]
             anchor_lat = base[1] + offset[1]
 
+            # 方向：优先 unit_state，回退到 unit 级别默认方向
             direction = us.direction or (unit.direction if unit else None)
             angle = _angle_for_direction(direction) if direction else None
 
             feat_list = _make_unit_banner_features(
                 anchor_lng, anchor_lat, angle, direction,
-                direction_len_m, us.unit_name,
+                direction_len_m, unit_name,
                 unit.faction if unit else "",
-                us.status, seq, us.description, scale,
+                us.status, current_seq, us.description, scale,
             )
             geojson_features.extend(feat_list)
 

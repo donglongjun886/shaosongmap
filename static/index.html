@@ -389,7 +389,8 @@ map.on('load', () => {
         ['match', ['get', 'faction'], '宋', 'banner-song', '金', 'banner-jin', 'banner-song']
       ],
       'icon-size': ['step', ['zoom'], 0.2, 5, 0.35, 8, 0.55, 12, 0.8],
-      'icon-allow-overlap': true
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true
     }
   });
   // 旗帜标签（部队名）
@@ -397,11 +398,14 @@ map.on('load', () => {
     id: 'unit-banner-label', type: 'symbol', source: 'unit-banners',
     layout: {
       'text-field': ['get', 'unit_name'],
-      'text-offset': [0, 2.2],
-      'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 14],
-      'text-anchor': 'top'
+      'text-offset': [0, 1.5],
+      'text-size': ['step', ['zoom'], 10, 5, 12, 8, 14, 12, 16],
+      'text-anchor': 'top',
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+      'text-optional': false
     },
-    paint: { 'text-color': '#2c2c2c', 'text-halo-color': '#f2e8d5', 'text-halo-width': 2 }
+    paint: { 'text-color': '#2c2c2c', 'text-halo-color': '#f2e8d5', 'text-halo-width': 2.5 }
   });
   // 方向指示线
   map.addLayer({
@@ -851,6 +855,23 @@ function renderEditableResult(data) {
     factionsHtml += `<div style="margin:4px 0"><strong>${escHtml(f.name)}:</strong> 将领: ${commanders}<button class="add-btn" onclick="addCommander(${fi})">+将领</button> 兵力: <input class="editable-field" id="edit-troops-${fi}" value="${escHtml(f.troops || '')}" placeholder="未知" oninput="markModified()"></div>`;
   });
 
+  let unitsHtml = '';
+  const units = data.units || [];
+  if (units.length > 0) {
+    const unitRows = units.map((u, ui) => {
+      const factionColor = (u.faction || '').includes('宋') ? '#2b4c7e' : (u.faction || '').includes('金') ? '#8b4513' : '#5a7a6a';
+      const typeLabel = {infantry: '步', cavalry: '骑', mixed: '混'}[u.troop_type] || '?';
+      return `<div style="margin:2px 0;font-size:13px">
+        <span style="display:inline-block;width:8px;height:8px;background:${factionColor};margin-right:4px;vertical-align:middle"></span>
+        <strong>${escHtml(u.name)}</strong>
+        ${u.commander ? `<span style="color:#555">· ${escHtml(u.commander)}</span>` : ''}
+        <span style="display:inline-block;padding:0 4px;border-radius:2px;font-size:10px;background:#e8e0d0;margin:0 2px">${typeLabel}</span>
+        ${u.troop_count ? `<span style="color:#888;font-size:11px">${escHtml(u.troop_count)}</span>` : ''}
+      </div>`;
+    }).join('');
+    unitsHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #d5c8b0"><strong style="font-size:13px">⚔️ 部队编制</strong>${unitRows}</div>`;
+  }
+
   let placesHtml = data.features.map((f, i) => {
     const tagClass = f.source === 'chgis' ? 'tag-chgis' : f.source === 'llm_infer' ? 'tag-llm' : 'tag-unknown';
     const coords = f.lng ? ` (${f.lng.toFixed(2)}, ${f.lat.toFixed(2)})` : '';
@@ -865,7 +886,7 @@ function renderEditableResult(data) {
   if (!routesHtml) routesHtml = '未检测到行军路线';
   routesHtml += ` <button class="add-btn" onclick="addRoute()">+路线</button>`;
 
-  document.getElementById('campaign-info').innerHTML = `<div>${nameHtml}${factionsHtml}</div>`;
+  document.getElementById('campaign-info').innerHTML = `<div>${nameHtml}${factionsHtml}${unitsHtml}</div>`;
   document.getElementById('places-list').innerHTML = placesHtml;
   document.getElementById('routes-list').innerHTML = routesHtml;
 }
@@ -1039,10 +1060,10 @@ function applyTimelineFilters() {
   map.setFilter('places-llm-dim', dimFilter);
   map.setFilter('route-lines', activeFilter);
   map.setFilter('route-arrows', activeFilter);
-  _safeFilter('unit-banner-icon', ['<=', ['get', 'step'], currentStep]);
-  _safeFilter('unit-banner-label', ['<=', ['get', 'step'], currentStep]);
-  _safeFilter('unit-direction-line', ['<=', ['get', 'step'], currentStep]);
-  _safeFilter('unit-direction-arrow', ['<=', ['get', 'step'], currentStep]);
+  _safeFilter('unit-banner-icon', ['==', ['get', 'step'], currentStep]);
+  _safeFilter('unit-banner-label', ['==', ['get', 'step'], currentStep]);
+  _safeFilter('unit-direction-line', ['==', ['get', 'step'], currentStep]);
+  _safeFilter('unit-direction-arrow', ['==', ['get', 'step'], currentStep]);
 }
 
 // ─── 键盘快捷键 ───

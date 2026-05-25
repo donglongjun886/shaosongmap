@@ -15,7 +15,7 @@ class Faction(BaseModel):
     troops: Optional[str] = Field(default=None, description="兵力描述，如「三万」「十万」")
 
 
-PlaceType = Literal["city", "mountain_pass", "river", "mountain", "region", "battlefield"]
+PlaceType = Literal["city", "mountain_pass", "river", "mountain", "region", "battlefield", "camp"]
 
 MilitaryScale = Literal["tactical", "battle", "strategic"]
 
@@ -33,7 +33,7 @@ class Place(BaseModel):
     context: str = Field(default="", description="原文字段，供消歧义使用")
     place_type: Optional[PlaceType] = Field(
         default=None,
-        description="地名类型：city(城池) / mountain_pass(关隘) / river(河流) / mountain(山脉) / region(行政区) / battlefield(战场)",
+        description="地名类型：city(城池) / mountain_pass(关隘) / river(河流) / mountain(山脉) / region(行政区) / battlefield(战场) / camp(营寨)",
     )
 
 

@@ -128,6 +128,9 @@ class GeoFeature(BaseModel):
     confidence: Optional[str] = Field(
         default=None, description="LLM 推断时的可信度：high / medium / low"
     )
+    place_type: Optional[PlaceType] = Field(
+        default=None, description="地名类型：city / mountain_pass / river / mountain / region / battlefield / camp"
+    )
 
 
 class RouteLine(BaseModel):

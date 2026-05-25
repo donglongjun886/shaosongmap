@@ -256,13 +256,20 @@ def geocode(
             continue
 
         if chgis:
+            chgis.place_type = place.place_type
             results.append(chgis)
         else:
             unmatched.append(place.name)
 
+    # 建立地名→Place映射，用于补充place_type
+    place_map = {p.name: p for p in places}
+
     # 第二遍：LLM 推断兜底
     if unmatched:
         llm_results = infer_with_llm(unmatched, context_text)
+        for feat in llm_results:
+            if feat.name in place_map:
+                feat.place_type = place_map[feat.name].place_type
         results.extend(llm_results)
 
     return results

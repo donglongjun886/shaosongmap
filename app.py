@@ -270,6 +270,7 @@ def _make_geojson(
                 "source": feat.source,
                 "modern_name": feat.modern_name,
                 "confidence": feat.confidence,
+                "place_type": feat.place_type,
             }
             if step_map is not None:
                 props["step"] = step_map.get(feat.name, 0)

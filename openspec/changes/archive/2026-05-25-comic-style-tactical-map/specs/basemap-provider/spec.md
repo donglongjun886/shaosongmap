@@ -1,9 +1,7 @@
-# Basemap Provider 底图提供者
+# Basemap Provider 底图提供者 (Delta)
 
-## Purpose
+## MODIFIED Requirements
 
-可切换底图架构——根据军事 scale 自动选择底图模式，预留手动切换接口。Zoom 响应式地名标记确保不同缩放级别下清晰可读。
-## Requirements
 ### Requirement: 底图提供者架构
 
 系统 SHALL 支持可切换的底图提供者（Basemap Provider）架构，提供至少两种底图模式，并根据军事 scale 级别自动选择。架构 MUST 预留手动切换接口供后续扩展。
@@ -50,37 +48,3 @@
 
 - **WHEN** 开发者设置 `basemapMode = 'schematic'`（手动模式）
 - **THEN** 系统使用指定底图，不再根据 scale 自动选择
-
-### Requirement: Zoom 响应式地名标记
-
-系统 SHALL 使用 MapLibre zoom 表达式动态调整地名标记的 circle-radius 和 text-size，确保在不同缩放级别下标记清晰可读且不重叠。
-
-circle-radius MUST 按以下分段映射：
-- zoom < 5 → 3px（远视角，极小标记）
-- zoom 5-8 → 6px
-- zoom 8-12 → 10px
-- zoom ≥ 12 → 14px（近视角，战术细节）
-
-text-size MUST 按以下分段映射：
-- zoom < 5 → 9px
-- zoom 5-8 → 11px
-- zoom 8-12 → 13px
-- zoom ≥ 12 → 15px
-
-灰显（dim）标记的 circle-radius 应比正常标记小 2px。
-
-#### Scenario: 战略级远视角下标记缩小
-
-- **WHEN** 地图 zoom 为 5，scale 为 strategic
-- **THEN** 地名 circle-radius 为 3px，text-size 为 9px，避免标记过大遮盖地形
-
-#### Scenario: 战术级近视角下标记放大
-
-- **WHEN** 地图 zoom 为 14，scale 为 tactical
-- **THEN** 地名 circle-radius 为 14px，text-size 为 15px，近距离可清晰识别
-
-#### Scenario: zoom 变化时标记平滑过渡
-
-- **WHEN** 用户缩放地图从 zoom 8 到 zoom 12
-- **THEN** 地名标记尺寸从 6px 逐步过渡到 10px（step 表达式自动插值）
-

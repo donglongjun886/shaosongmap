@@ -180,47 +180,96 @@ def test_validate_unit_states_invalid_unit_name():
     assert len(result) == 1
 
 
-# ── 6.3: 块状箭头 Polygon 生成 ──
+# ── 6.3: 旗帜标记特征生成 ──
 
 
-class TestBlockArrowPolygon:
-    """测试 _make_block_arrow_polygon 函数。"""
+class TestUnitBannerFeatures:
+    """测试 _make_unit_banner_features 函数。"""
 
-    def test_basic_arrow(self):
-        """生成基本箭头 Polygon。"""
-        from app import _make_block_arrow_polygon
+    def test_generates_point_and_linestring(self):
+        """每个有方向的部队状态生成 Point + LineString 两个特征。"""
+        from app import _make_unit_banner_features
 
-        coords = _make_block_arrow_polygon(114.0, 35.0, 0.0, 2000, 800, 600)
-        # 返回 8 个顶点的闭合环
-        assert len(coords) == 8
-        # 首尾相同（闭合）
-        assert coords[0] == coords[-1]
-        # 所有坐标都是 [lng, lat] 格式
-        for c in coords:
-            assert len(c) == 2
-        # 箭尖应在地理位置上远离起点（0°=正东，lng 应增大）
-        tip = coords[4]  # 箭尖在 index 4
-        assert tip[0] > 114.0
+        features = _make_unit_banner_features(
+            114.0, 35.0, 45.0, "东北", 2000,
+            "焦文通部", "宋", "marching", 2, "侧翼包抄", "tactical",
+        )
+        assert len(features) == 2
+        assert features[0]["geometry"]["type"] == "Point"
+        assert features[0]["properties"]["_feature_type"] == "unit_banner"
+        assert features[1]["geometry"]["type"] == "LineString"
+        assert features[1]["properties"]["_feature_type"] == "unit_direction"
 
-    def test_arrow_south_direction(self):
-        """向南的箭头，箭尖纬度应减少。"""
-        from app import _make_block_arrow_polygon
+    def test_no_direction_generates_point_only(self):
+        """无方向时仅生成 Point 特征。"""
+        from app import _make_unit_banner_features
 
-        coords = _make_block_arrow_polygon(114.0, 35.0, 270.0, 2000, 800, 600)
-        tip = coords[4]
-        assert tip[1] < 35.0  # 向南，纬度减小
+        features = _make_unit_banner_features(
+            114.0, 35.0, None, None, 2000,
+            "守城军", "金", "deploying", 1, "据守", "battle",
+        )
+        assert len(features) == 1
+        assert features[0]["geometry"]["type"] == "Point"
 
-    def test_angle_for_direction(self):
-        """方位词→角度转换。"""
-        from app import _angle_for_direction
+    def test_point_at_anchor(self):
+        """Point 位于锚点坐标。"""
+        from app import _make_unit_banner_features
 
-        assert _angle_for_direction("东") == 0.0
-        assert _angle_for_direction("北") == 90.0
-        assert _angle_for_direction("南") == 270.0
-        assert _angle_for_direction("西北") == 135.0
-        assert _angle_for_direction("东南") == 315.0
-        assert _angle_for_direction(None) == 0.0
-        assert _angle_for_direction("未知") == 0.0
+        features = _make_unit_banner_features(
+            114.0, 35.0, 0.0, "东", 2000,
+            "测试部", "金", "deploying", 1, "", "battle",
+        )
+        assert features[0]["geometry"]["coordinates"] == [114.0, 35.0]
+
+    def test_direction_line_east(self):
+        """向东的方向线经度增大。"""
+        from app import _make_unit_banner_features
+
+        features = _make_unit_banner_features(
+            114.0, 35.0, 0.0, "东", 2000,
+            "测试部", "宋", "marching", 1, "", "battle",
+        )
+        line = features[1]["geometry"]["coordinates"]
+        assert line[1][0] > line[0][0]  # 经度增大
+
+    def test_direction_line_north(self):
+        """向北的方向线纬度增大。"""
+        from app import _make_unit_banner_features
+
+        features = _make_unit_banner_features(
+            114.0, 35.0, 90.0, "北", 2000,
+            "测试部", "宋", "marching", 1, "", "battle",
+        )
+        line = features[1]["geometry"]["coordinates"]
+        assert line[1][1] > line[0][1]  # 纬度增大
+
+    def test_properties_preserved(self):
+        """旗帜属性完整传递。"""
+        from app import _make_unit_banner_features
+
+        features = _make_unit_banner_features(
+            114.0, 35.0, 0.0, "东", 2000,
+            "合扎猛安", "金", "engaging", 3, "铁骑冲击", "tactical",
+        )
+        props = features[0]["properties"]
+        assert props["unit_name"] == "合扎猛安"
+        assert props["faction"] == "金"
+        assert props["status"] == "engaging"
+        assert props["step"] == 3
+        assert props["direction"] == "东"
+
+
+def test_angle_for_direction():
+    """方位词→角度转换。"""
+    from app import _angle_for_direction
+
+    assert _angle_for_direction("东") == 0.0
+    assert _angle_for_direction("北") == 90.0
+    assert _angle_for_direction("南") == 270.0
+    assert _angle_for_direction("西北") == 135.0
+    assert _angle_for_direction("东南") == 315.0
+    assert _angle_for_direction(None) == 0.0
+    assert _angle_for_direction("未知") == 0.0
 
 
 # ── 6.4: 集成测试 ──

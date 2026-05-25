@@ -250,11 +250,11 @@
       今地名对照
     </label>
     <div class="legend-divider"></div>
-    <div class="legend-item"><span style="color:var(--indigo)">◆</span> 宋军部队</div>
-    <div class="legend-item"><span style="color:var(--ochre)">◆</span> 金军部队</div>
+    <div class="legend-item"><span style="display:inline-block;width:12px;height:10px;border:2px solid var(--indigo);background:rgba(43,76,126,0.15);vertical-align:middle"></span> 宋军旗帜</div>
+    <div class="legend-item"><span style="display:inline-block;width:12px;height:10px;border:2px solid var(--ochre);background:rgba(139,69,19,0.15);vertical-align:middle"></span> 金军旗帜</div>
     <label class="legend-item legend-toggle">
       <input type="checkbox" id="toggle-units" checked onchange="toggleUnitLayers(this.checked)">
-      部队箭头
+      部队旗帜
     </label>
   </div>
 </div>
@@ -337,6 +337,11 @@ map.on('load', () => {
   actx.beginPath(); actx.moveTo(20, 12); actx.lineTo(4, 4); actx.lineTo(4, 20);
   actx.closePath(); actx.fill();
   map.addImage('arrowhead', actx.getImageData(0, 0, 24, 24), { pixelRatio: 2 });
+  // 部队旗帜图标
+  map.addImage('banner-song', _makeBannerIcon('#2b4c7e', 32), { pixelRatio: 2 });
+  map.addImage('banner-jin', _makeBannerIcon('#8b4513', 32), { pixelRatio: 2 });
+  map.addImage('banner-engaging', _makeBannerIcon('#c23b22', 32), { pixelRatio: 2 });
+  map.addImage('banner-dim', _makeBannerIcon('#999', 32), { pixelRatio: 2 });
 
   map.addSource('places', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -371,30 +376,49 @@ map.on('load', () => {
     layout: { 'symbol-placement': 'line', 'symbol-spacing': 180, 'icon-image': 'arrowhead', 'icon-size': 0.8, 'icon-rotate': 90 },
     paint: {}
   });
-  // ── 部队块状箭头图层 ──
-  map.addSource('unit-arrows', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  // ── 部队旗帜标记图层（汉代《驻军图》风格） ──
+  map.addSource('unit-banners', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addSource('unit-directions', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
+  // 旗帜图标
   map.addLayer({
-    id: 'unit-arrow-fill', type: 'fill', source: 'unit-arrows',
-    paint: {
-      'fill-color': ['match', ['get', 'faction'], '宋', '#2b4c7e', '金', '#8b4513', '#5a7a6a'],
-      'fill-opacity': ['match', ['get', 'status'], 'deploying', 0.5, 'marching', 0.75, 'engaging', 0.85, 'retreating', 0.3, 'routing', 0.35, 0.75],
-      'fill-antialias': true
+    id: 'unit-banner-icon', type: 'symbol', source: 'unit-banners',
+    layout: {
+      'icon-image': ['match', ['get', 'status'],
+        'engaging', 'banner-engaging',
+        ['match', ['get', 'faction'], '宋', 'banner-song', '金', 'banner-jin', 'banner-song']
+      ],
+      'icon-size': ['step', ['zoom'], 0.2, 5, 0.35, 8, 0.55, 12, 0.8],
+      'icon-allow-overlap': true
     }
   });
+  // 旗帜标签（部队名）
   map.addLayer({
-    id: 'unit-arrow-outline', type: 'line', source: 'unit-arrows',
+    id: 'unit-banner-label', type: 'symbol', source: 'unit-banners',
+    layout: {
+      'text-field': ['get', 'unit_name'],
+      'text-offset': [0, 2.2],
+      'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 14],
+      'text-anchor': 'top'
+    },
+    paint: { 'text-color': '#2c2c2c', 'text-halo-color': '#f2e8d5', 'text-halo-width': 2 }
+  });
+  // 方向指示线
+  map.addLayer({
+    id: 'unit-direction-line', type: 'line', source: 'unit-directions',
     paint: {
-      'line-color': ['match', ['get', 'status'], 'engaging', '#c23b22', 'retreating', '#999', 'routing', '#c23b22', '#2c2c2c'],
-      'line-width': ['match', ['get', 'status'], 'engaging', 2.5, 'retreating', 1, 'routing', 1.5, 1.5],
-      'line-dasharray': [1, 0],
-      'line-opacity': ['match', ['get', 'status'], 'deploying', 0.7, 'routing', 0.5, 0.9]
+      'line-color': ['match', ['get', 'faction'], '宋', '#2b4c7e', '金', '#8b4513', '#5a7a6a'],
+      'line-width': 2, 'line-opacity': 0.7, 'line-dasharray': [6, 3]
     }
   });
+  // 方向箭头（在方向线末端）
   map.addLayer({
-    id: 'unit-arrow-labels', type: 'symbol', source: 'unit-arrows',
-    layout: { 'text-field': ['get', 'unit_name'], 'text-size': 11, 'text-anchor': 'center' },
-    paint: { 'text-color': '#fff', 'text-halo-color': '#000', 'text-halo-width': 1 }
+    id: 'unit-direction-arrow', type: 'symbol', source: 'unit-directions',
+    layout: {
+      'symbol-placement': 'line', 'symbol-spacing': 1,
+      'icon-image': 'arrowhead', 'icon-size': 0.5, 'icon-rotate': 90,
+      'icon-allow-overlap': true
+    }
   });
 
   map.addLayer({
@@ -416,9 +440,9 @@ map.on('load', () => {
   map.on('mouseleave', 'places-chgis', () => { map.getCanvas().style.cursor = ''; });
   map.on('mouseenter', 'places-llm', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'places-llm', () => { map.getCanvas().style.cursor = ''; });
-  map.on('click', 'unit-arrow-fill', (e) => showUnitPopup(e));
-  map.on('mouseenter', 'unit-arrow-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', 'unit-arrow-fill', () => { map.getCanvas().style.cursor = ''; });
+  map.on('click', 'unit-banner-icon', (e) => showUnitPopup(e));
+  map.on('mouseenter', 'unit-banner-icon', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'unit-banner-icon', () => { map.getCanvas().style.cursor = ''; });
   console.log('[map.onload] icons, sources, layers all registered');
 
   // TODO: Phase 3 山川河流符号层
@@ -443,6 +467,27 @@ function _makeIconSVG(type, color, size) {
     ctx.moveTo(size/2, 3); ctx.lineTo(size-3, size-4); ctx.lineTo(3, size-4);
     ctx.closePath(); ctx.fill();
   }
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function _makeBannerIcon(color, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  // 外框（墨线）
+  ctx.strokeStyle = '#2c2c2c'; ctx.lineWidth = 2;
+  ctx.strokeRect(3, 5, size-6, size-12);
+  // 内框（阵营色）
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+  ctx.strokeRect(6, 8, size-12, size-18);
+  // 半透明填充
+  ctx.fillStyle = color + '25';
+  ctx.fillRect(6, 8, size-12, size-18);
+  // 顶部旗标三角
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(size/2, 2); ctx.lineTo(size/2+5, 7); ctx.lineTo(size/2-5, 7);
+  ctx.closePath(); ctx.fill();
   return ctx.getImageData(0, 0, size, size);
 }
 
@@ -928,21 +973,20 @@ function updateMap(data) {
   try {
   console.log('[updateMap] called, geojson features:', data.geojson?.features?.length, 'scale:', data.scale);
   const geojsonFeatures = data.geojson.features || [];
-  const placeFeatures = geojsonFeatures.filter(f => f.geometry.type === 'Point');
-  console.log('[updateMap] placeFeatures:', placeFeatures.length);
-  const routeFeatures = geojsonFeatures.filter(f => f.geometry.type === 'LineString');
-  console.log('[updateMap] routeFeatures:', routeFeatures.length);
-  const unitFeatures = geojsonFeatures.filter(f => f.geometry.type === 'Polygon');
-  console.log('[updateMap] unitFeatures:', unitFeatures.length);
-  console.log('[updateMap] checking source places:', !!map.getSource('places'));
+  const placeFeatures = geojsonFeatures.filter(f =>
+    f.geometry.type === 'Point' && f.properties?._feature_type !== 'unit_banner');
+  const routeFeatures = geojsonFeatures.filter(f =>
+    f.geometry.type === 'LineString' && f.properties?.type === 'route');
+  const unitBannerFeatures = geojsonFeatures.filter(f =>
+    f.properties?._feature_type === 'unit_banner');
+  const unitDirectionFeatures = geojsonFeatures.filter(f =>
+    f.properties?._feature_type === 'unit_direction');
+  console.log('[updateMap] places:', placeFeatures.length, 'routes:', routeFeatures.length,
+    'banners:', unitBannerFeatures.length, 'directions:', unitDirectionFeatures.length);
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
-  console.log('[updateMap] places setData done');
-  console.log('[updateMap] checking source routes:', !!map.getSource('routes'));
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
-  console.log('[updateMap] routes setData done');
-  console.log('[updateMap] checking source unit-arrows:', !!map.getSource('unit-arrows'));
-  map.getSource('unit-arrows').setData({ type: 'FeatureCollection', features: unitFeatures });
-  console.log('[updateMap] unit-arrows setData done');
+  map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: unitBannerFeatures });
+  map.getSource('unit-directions').setData({ type: 'FeatureCollection', features: unitDirectionFeatures });
   // 底图根据 scale 自动切换
   console.log('[updateMap] basemapMode:', basemapMode, 'scale:', data.scale);
   if (basemapMode === 'auto' && data.scale) {
@@ -981,9 +1025,10 @@ function applyTimelineFilters() {
     map.setFilter('places-llm-dim', ['==', ['get', 'step'], -1]);
     map.setFilter('route-lines', null);
     map.setFilter('route-arrows', null);
-    _safeFilter('unit-arrow-fill', null);
-    _safeFilter('unit-arrow-outline', null);
-    _safeFilter('unit-arrow-labels', null);
+    _safeFilter('unit-banner-icon', null);
+    _safeFilter('unit-banner-label', null);
+    _safeFilter('unit-direction-line', null);
+    _safeFilter('unit-direction-arrow', null);
     return;
   }
   var activeFilter = ['any', ['<=', ['get', 'step'], currentStep], ['!', ['has', 'step']]];
@@ -994,9 +1039,10 @@ function applyTimelineFilters() {
   map.setFilter('places-llm-dim', dimFilter);
   map.setFilter('route-lines', activeFilter);
   map.setFilter('route-arrows', activeFilter);
-  _safeFilter('unit-arrow-fill', ['all', ['<=', ['get', 'step'], currentStep], ['!=', ['get', 'status'], 'routing']]);
-  _safeFilter('unit-arrow-outline', ['<=', ['get', 'step'], currentStep]);
-  _safeFilter('unit-arrow-labels', ['all', ['<=', ['get', 'step'], currentStep], ['!=', ['get', 'status'], 'routing']]);
+  _safeFilter('unit-banner-icon', ['<=', ['get', 'step'], currentStep]);
+  _safeFilter('unit-banner-label', ['<=', ['get', 'step'], currentStep]);
+  _safeFilter('unit-direction-line', ['<=', ['get', 'step'], currentStep]);
+  _safeFilter('unit-direction-arrow', ['<=', ['get', 'step'], currentStep]);
 }
 
 // ─── 键盘快捷键 ───
@@ -1016,9 +1062,10 @@ function toggleLayer(layerId, visible) { map.setLayoutProperty(layerId, 'visibil
 
 function toggleUnitLayers(visible) {
   var v = visible ? 'visible' : 'none';
-  _safeLayout('unit-arrow-fill', 'visibility', v);
-  _safeLayout('unit-arrow-outline', 'visibility', v);
-  _safeLayout('unit-arrow-labels', 'visibility', v);
+  _safeLayout('unit-banner-icon', 'visibility', v);
+  _safeLayout('unit-banner-label', 'visibility', v);
+  _safeLayout('unit-direction-line', 'visibility', v);
+  _safeLayout('unit-direction-arrow', 'visibility', v);
 }
 
 function showUnitPopup(e) {

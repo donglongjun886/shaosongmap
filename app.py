@@ -382,45 +382,70 @@ def _compute_data_diagonal(place_coords: list[tuple[float, float]]) -> float:
     return math.sqrt(dx * dx + dy * dy)
 
 
-def _make_block_arrow_polygon(
+def _offset_point(
+    lng: float, lat: float, angle_deg: float, distance_m: float,
+) -> list[float]:
+    """从给定点沿给定角度偏移指定距离（米），返回 [lng, lat]."""
+    import math
+    lat_rad = math.radians(lat)
+    angle_rad = math.radians(angle_deg)
+    d_lng = distance_m * math.cos(angle_rad) / (111320.0 * math.cos(lat_rad))
+    d_lat = distance_m * math.sin(angle_rad) / 111320.0
+    return [lng + d_lng, lat + d_lat]
+
+
+def _make_unit_banner_features(
     lng: float,
     lat: float,
-    angle_deg: float,
-    body_len_m: float,
-    body_width_m: float,
-    head_len_m: float,
-) -> list[list[float]]:
-    """生成块状箭头的 GeoJSON Polygon 坐标环。"""
-    import math
+    angle_deg: float | None,
+    direction_name: str | None,
+    direction_len_m: float,
+    unit_name: str,
+    faction: str,
+    status: str,
+    seq: int,
+    description: str,
+    scale: str | None,
+) -> list[dict]:
+    """为部队生成汉代《驻军图》风格旗帜标记 GeoJSON 特征。
 
-    lat_rad = math.radians(lat)
-    deg_per_m_lat = 1.0 / 111320.0
-    deg_per_m_lng = 1.0 / (111320.0 * math.cos(lat_rad))
+    返回 list，包含：
+    - Point 特征：旗帜位置（渲染为双线矩形框图标）
+    - LineString 特征（如有方向）：方向指示线
+    """
 
-    angle_rad = math.radians(angle_deg)
-    cos_a = math.cos(angle_rad)
-    sin_a = math.sin(angle_rad)
+    banner_props = {
+        "_feature_type": "unit_banner",
+        "unit_name": unit_name,
+        "faction": faction,
+        "status": status,
+        "step": seq,
+        "description": description,
+        "direction": direction_name,
+        "scale": scale,
+    }
 
-    perp_cos = math.cos(angle_rad + math.pi / 2)
-    perp_sin = math.sin(angle_rad + math.pi / 2)
+    features: list[dict] = [{
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [lng, lat]},
+        "properties": banner_props,
+    }]
 
-    def offset(base_lng, base_lat, forward_m, sideways_m):
-        dlng = (forward_m * cos_a + sideways_m * perp_cos) * deg_per_m_lng
-        dlat = (forward_m * sin_a + sideways_m * perp_sin) * deg_per_m_lat
-        return [base_lng + dlng, base_lat + dlat]
+    if angle_deg is not None:
+        end = _offset_point(lng, lat, angle_deg, direction_len_m)
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[lng, lat], end]},
+            "properties": {
+                "_feature_type": "unit_direction",
+                "unit_name": unit_name,
+                "faction": faction,
+                "status": status,
+                "step": seq,
+            },
+        })
 
-    half_w = body_width_m / 2
-    neck_w = body_width_m * 0.3
-
-    p1 = offset(lng, lat, 0, -half_w)
-    p2 = offset(lng, lat, 0, half_w)
-    p3 = offset(lng, lat, body_len_m, half_w)
-    p4 = offset(lng, lat, body_len_m, neck_w)
-    p_tip = offset(lng, lat, body_len_m + head_len_m, 0)
-    p5 = offset(lng, lat, body_len_m, -neck_w)
-    p6 = offset(lng, lat, body_len_m, -half_w)
-
-    return [p1, p2, p3, p4, p_tip, p5, p6, p1]
+    return features
 
 
 def _compute_unit_offsets(
@@ -461,7 +486,7 @@ def _compute_unit_offsets(
 
     # 为每个部队计算偏移
     offsets: dict[str, list[float]] = {}
-    # 箭头间距：基于 body_width 自适应（约1.2倍箭头宽度）
+    # 旗帜间距：基于 body_width 自适应（约1.2倍标识宽度）
     # body_width 由 _make_unit_geojson 中 diagonal × ratio / 3.5 得出
     scale_ratio_w = {"tactical": 0.20, "battle": 0.08, "strategic": 0.03}
     ratio_w = scale_ratio_w.get(scale, 0.08)
@@ -508,7 +533,10 @@ def _make_unit_geojson(
     features: list[GeoFeature],
     scale: str | None,
 ) -> list[dict]:
-    """为部队生成块状箭头 GeoJSON Feature 列表。"""
+    """为部队生成汉代《驻军图》风格旗帜标记 GeoJSON 特征列表。
+
+    每个部队状态生成一个 Point（旗帜位置）+ 一个 LineString（方向指示线）。
+    """
     from collections import defaultdict
 
     # 建立地名→坐标映射
@@ -520,21 +548,17 @@ def _make_unit_geojson(
     # 计算同地多部队偏移
     offsets = _compute_unit_offsets(unit_states, units, features, scale)
 
-    # 计算数据范围对角线，用于自适应箭头尺寸
+    # 计算数据范围对角线，用于自适应方向线长度
     place_coords = [
         (feat.lng, feat.lat)
         for feat in features if feat.lng is not None and feat.lat is not None
     ]
     diagonal_m = _compute_data_diagonal(place_coords)
-    # scale 系数：箭头占数据范围对角线的比例
     scale_ratio = {"tactical": 0.20, "battle": 0.08, "strategic": 0.03}
     ratio = scale_ratio.get(scale, 0.08)
-    body_len = diagonal_m * ratio
-    body_len = max(body_len, 80.0)   # 最小80m保底（极小数据范围）
-    body_len = min(body_len, 25000.0)  # 最大25km上限（战略级避免箭头过大）
-    # 新形状比例：宽长比 1:3.5，头部占全长 40%
-    body_width = body_len / 3.5
-    head_len = body_len * 0.4
+    direction_len_m = diagonal_m * ratio
+    direction_len_m = max(direction_len_m, 500.0)   # 最小500m
+    direction_len_m = min(direction_len_m, 20000.0)  # 最大20km
 
     # 建立部队名→部队对象映射
     unit_map: dict[str, ForceUnit] = {u.name: u for u in units}
@@ -545,15 +569,9 @@ def _make_unit_geojson(
         seq_states[us.seq].append(us)
 
     geojson_features: list[dict] = []
-    seen_keys: set[tuple[str, int]] = set()  # (unit_name, seq) 去重
 
     for seq, states in sorted(seq_states.items()):
         for us in states:
-            key = (us.unit_name, seq)
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-
             unit = unit_map.get(us.unit_name)
             location = us.location
             if not location or location not in coord_map:
@@ -565,27 +583,15 @@ def _make_unit_geojson(
             anchor_lat = base[1] + offset[1]
 
             direction = us.direction or (unit.direction if unit else None)
-            angle = _angle_for_direction(direction)
-            coords = _make_block_arrow_polygon(
-                anchor_lng, anchor_lat, angle,
-                body_len, body_width, head_len,
+            angle = _angle_for_direction(direction) if direction else None
+
+            feat_list = _make_unit_banner_features(
+                anchor_lng, anchor_lat, angle, direction,
+                direction_len_m, us.unit_name,
+                unit.faction if unit else "",
+                us.status, seq, us.description, scale,
             )
-
-            props = {
-                "unit_name": us.unit_name,
-                "faction": unit.faction if unit else "",
-                "status": us.status,
-                "step": seq,
-                "description": us.description,
-                "direction": direction,
-                "scale": scale,
-            }
-
-            geojson_features.append({
-                "type": "Feature",
-                "geometry": {"type": "Polygon", "coordinates": [coords]},
-                "properties": props,
-            })
+            geojson_features.extend(feat_list)
 
     return geojson_features
 

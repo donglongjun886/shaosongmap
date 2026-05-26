@@ -206,9 +206,9 @@ class TestUnitBannerFeatures:
 
     def test_generates_point_and_linestring(self):
         """每个有方向的部队状态生成 Point + LineString 两个特征。"""
-        from app import _make_unit_banner_features
+        from shaosongmap.services.unit_banner import make_unit_banner_features
 
-        features = _make_unit_banner_features(
+        features = make_unit_banner_features(
             114.0,
             35.0,
             45.0,
@@ -229,9 +229,9 @@ class TestUnitBannerFeatures:
 
     def test_no_direction_generates_point_only(self):
         """无方向时仅生成 Point 特征。"""
-        from app import _make_unit_banner_features
+        from shaosongmap.services.unit_banner import make_unit_banner_features
 
-        features = _make_unit_banner_features(
+        features = make_unit_banner_features(
             114.0,
             35.0,
             None,
@@ -249,9 +249,9 @@ class TestUnitBannerFeatures:
 
     def test_point_at_anchor(self):
         """Point 位于锚点坐标。"""
-        from app import _make_unit_banner_features
+        from shaosongmap.services.unit_banner import make_unit_banner_features
 
-        features = _make_unit_banner_features(
+        features = make_unit_banner_features(
             114.0,
             35.0,
             0.0,
@@ -268,9 +268,9 @@ class TestUnitBannerFeatures:
 
     def test_direction_line_east(self):
         """向东的方向线经度增大。"""
-        from app import _make_unit_banner_features
+        from shaosongmap.services.unit_banner import make_unit_banner_features
 
-        features = _make_unit_banner_features(
+        features = make_unit_banner_features(
             114.0,
             35.0,
             0.0,
@@ -288,9 +288,9 @@ class TestUnitBannerFeatures:
 
     def test_direction_line_north(self):
         """向北的方向线纬度增大。"""
-        from app import _make_unit_banner_features
+        from shaosongmap.services.unit_banner import make_unit_banner_features
 
-        features = _make_unit_banner_features(
+        features = make_unit_banner_features(
             114.0,
             35.0,
             90.0,
@@ -308,9 +308,9 @@ class TestUnitBannerFeatures:
 
     def test_properties_preserved(self):
         """旗帜属性完整传递。"""
-        from app import _make_unit_banner_features
+        from shaosongmap.services.unit_banner import make_unit_banner_features
 
-        features = _make_unit_banner_features(
+        features = make_unit_banner_features(
             114.0,
             35.0,
             0.0,
@@ -331,17 +331,17 @@ class TestUnitBannerFeatures:
         assert props['direction'] == '东'
 
 
-def test_angle_for_direction():
+def testangle_for_direction():
     """方位词→角度转换。"""
-    from app import _angle_for_direction
+    from shaosongmap.services.geo import angle_for_direction
 
-    assert _angle_for_direction('东') == 0.0
-    assert _angle_for_direction('北') == 90.0
-    assert _angle_for_direction('南') == 270.0
-    assert _angle_for_direction('西北') == 135.0
-    assert _angle_for_direction('东南') == 315.0
-    assert _angle_for_direction(None) == 0.0
-    assert _angle_for_direction('未知') == 0.0
+    assert angle_for_direction('东') == 0.0
+    assert angle_for_direction('北') == 90.0
+    assert angle_for_direction('南') == 270.0
+    assert angle_for_direction('西北') == 135.0
+    assert angle_for_direction('东南') == 315.0
+    assert angle_for_direction(None) == 0.0
+    assert angle_for_direction('未知') == 0.0
 
 
 # ── 6.4: 集成测试 ──

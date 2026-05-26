@@ -62,7 +62,7 @@ def _parse_sse(body: str) -> list[tuple[str, dict]]:
     return events
 
 
-@patch('app.extract')
+@patch('shaosongmap.routers.extract.extract')
 def test_api_extract_success(mock_extract):
     """正常请求返回 SSE 流，最终包含 result 事件和 GeoJSON。"""
     mock_extract.return_value = _patch_extract()
@@ -96,7 +96,7 @@ def test_api_extract_empty_text():
     assert '不能为空' in resp.json()['detail']
 
 
-@patch('app.extract')
+@patch('shaosongmap.routers.extract.extract')
 def test_api_extract_with_dynasty(mock_extract):
     """带朝代参数正常返回 SSE 流。"""
     mock_extract.return_value = _patch_extract()
@@ -113,7 +113,7 @@ def test_api_extract_with_dynasty(mock_extract):
     assert any(t == 'result' for t, _ in events)
 
 
-@patch('app.extract')
+@patch('shaosongmap.routers.extract.extract')
 def test_api_extract_llm_error(mock_extract):
     """Extractor 异常通过 SSE error 事件返回。"""
     mock_extract.side_effect = ValueError('DeepSeek API 返回空响应')

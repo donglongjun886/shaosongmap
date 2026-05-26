@@ -22,7 +22,7 @@ def _make_fake_png() -> bytes:
     return buf.read()
 
 
-@patch('app.ocr_main')
+@patch('shaosongmap.routers.ocr.ocr_main')
 def test_ocr_success(mock_ocr):
     """正常上传 PNG 返回清洗文本。"""
     mock_text = '岳飞率三万兵马自襄阳渡汉水，经唐州、邓州，直驱汴京。金军完颜宗弼以五万大军据守朱仙镇，两军对峙于汴京城南。'
@@ -58,7 +58,7 @@ def test_ocr_empty_file():
     assert '不能为空' in resp.json()['detail']
 
 
-@patch('app.ocr_main')
+@patch('shaosongmap.routers.ocr.ocr_main')
 def test_ocr_insufficient_text(mock_ocr):
     """OCR 文本不足 50 字返回 422。"""
     mock_ocr.side_effect = ValueError('未能从截图中提取到足够的文本（仅 15 字符）')

@@ -37,7 +37,7 @@ def _parse_events(body: str) -> list[tuple[str, dict]]:
     return events
 
 
-@patch('app.extract')
+@patch('shaosongmap.routers.extract.extract')
 def test_sse_event_format(mock_extract):
     """SSE 流包含正确的事件类型序列。"""
     mock_extract.return_value = _patch_extract()
@@ -65,7 +65,7 @@ def test_sse_event_format(mock_extract):
         assert 'detail' in d
 
 
-@patch('app.extract')
+@patch('shaosongmap.routers.extract.extract')
 def test_sse_result_contains_all_fields(mock_extract):
     """Result 事件包含完整的响应字段。"""
     mock_extract.return_value = _patch_extract()
@@ -82,13 +82,13 @@ def test_sse_result_contains_all_fields(mock_extract):
     assert result['geojson']['type'] == 'FeatureCollection'
 
 
-@patch('app.extract')
+@patch('shaosongmap.routers.extract.extract')
 def test_sse_geocode_error_handling(mock_extract):
     """Geocode 阶段异常通过 SSE error 事件返回。"""
     mock_extract.return_value = _patch_extract()
 
     # 模拟 geocode 失败：传入非法数据导致异常
-    with patch('app.geocode', side_effect=Exception('CHGIS 数据不可用')):
+    with patch('shaosongmap.routers.extract.geocode', side_effect=Exception('CHGIS 数据不可用')):
         resp = client.post('/api/extract', json={'text': '测试文本'})
         events = _parse_events(resp.text)
 

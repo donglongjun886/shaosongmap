@@ -27,7 +27,7 @@ def _make_files(count: int) -> list:
     return [('files', (f'screenshot_{i}.png', _make_fake_png(), 'image/png')) for i in range(count)]
 
 
-@patch('app.ocr_main')
+@patch('shaosongmap.routers.ocr.ocr_main')
 def test_batch_success(mock_ocr):
     """批量上传 3 张截图，返回拼接后文本。"""
     mock_ocr.side_effect = [
@@ -92,7 +92,7 @@ def test_batch_empty_file():
     assert '不能为空' in resp.json()['detail']
 
 
-@patch('app.ocr_main')
+@patch('shaosongmap.routers.ocr.ocr_main')
 def test_batch_ocr_failure(mock_ocr):
     """某张截图 OCR 识别失败（文本不足）返回 SSE 错误事件。"""
     mock_ocr.side_effect = [
@@ -111,7 +111,7 @@ def test_batch_ocr_failure(mock_ocr):
     assert '第 2 张' in body
 
 
-@patch('app.ocr_main')
+@patch('shaosongmap.routers.ocr.ocr_main')
 def test_batch_progress_sequence(mock_ocr):
     """验证 SSE 事件按正确顺序推送。"""
     mock_ocr.side_effect = [

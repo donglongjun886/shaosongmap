@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
@@ -12,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from shaosongmap.config import limiter
 from shaosongmap.schemas import ExtractRequest
-from shaosongmap.services.pipeline import run_extract_pipeline
+from shaosongmap.services.pipeline import PipelineStage, run_extract_pipeline
 from shaosongmap.utils import sse_event
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,31 @@ async def extract_campaign(body: ExtractRequest, request: Request):
     logger.info('提取请求: 文本长度=%d, mode=%s', len(body.text), body.mode or 'standard')
 
     async def event_stream():
-        for stage in run_extract_pipeline(body.text, body.dynasty, body.mode):
-            yield sse_event(stage.event, stage.data)
+        queue: asyncio.Queue[PipelineStage | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        exc_info: Exception | None = None
+
+        def _run_pipeline() -> None:
+            nonlocal exc_info
+            try:
+                for stage in run_extract_pipeline(body.text, body.dynasty, body.mode):
+                    loop.call_soon_threadsafe(queue.put_nowait, stage)
+            except Exception as exc:
+                exc_info = exc
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        fut = loop.run_in_executor(None, _run_pipeline)
+
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield sse_event(item.event, item.data)
+
+        await fut
+        if exc_info is not None:
+            raise exc_info
 
     return StreamingResponse(
         event_stream(),

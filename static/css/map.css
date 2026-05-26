@@ -1,0 +1,152 @@
+/* ShaosongMap 样式 */
+:root {
+  --paper: #f2e8d5;
+  --vermillion: #c23b22;
+  --indigo: #2b4c7e;
+  --ochre: #8b4513;
+  --ink: #2c2c2c;
+  --sage: #5a7a6a;
+  /* 阵营色（绍宋漫画主题） */
+  --faction-song: #2b4c7e;
+  --faction-jin: #c23b22;
+  --faction-unknown: #2c2c2c;
+  --status-engaging: #e63946;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "KaiTi", "STKaiti", "楷体", "Songti SC", "SimSun", "宋体", "Noto Serif SC", serif; height: 100vh; display: flex; }
+.panel { width: 380px; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid var(--ink); background: #f5efe0; }
+.panel-header { padding: 16px; background: var(--ink); color: var(--paper); font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: space-between; }
+.panel-header small { font-size: 12px; opacity: 0.7; display: block; font-weight: normal; }
+.panel-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-wrap: break-word; word-break: break-word; }
+textarea { flex: 1; min-height: 200px; padding: 12px; border: 1px solid #c8b896; border-radius: 8px; font-size: 14px; line-height: 1.6; resize: vertical; font-family: inherit; background: #faf7f0; }
+.row { display: flex; gap: 8px; align-items: center; }
+select { padding: 8px 12px; border: 1px solid #c8b896; border-radius: 6px; font-size: 14px; background: #faf7f0; color: var(--ink); }
+.btn { padding: 10px 24px; background: var(--vermillion); color: #fff; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; transition: background 0.2s; }
+.btn:hover { background: #a01d14; }
+.btn:disabled { background: #b8a99a; cursor: not-allowed; }
+.result-section { border-top: 1px solid #d8c8a8; padding-top: 12px; }
+.result-section h3 { font-size: 14px; color: var(--ink); margin-bottom: 8px; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px; }
+.tag-chgis { background: #e8e0d0; color: var(--ink); border: 1px solid var(--ink); }
+.tag-llm { background: #f5efe0; color: var(--ochre); border: 1px solid var(--ochre); }
+.tag-unknown { background: #fef0f0; color: var(--vermillion); border: 1px solid var(--vermillion); }
+.map-wrap { flex: 1; position: relative; border: 2px solid var(--ink); box-shadow: inset 0 0 30px rgba(44,44,44,0.06); }
+/* 宣纸纹理叠加 */
+.map-wrap::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; opacity: 0.07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat; }
+#map { width: 100%; height: 100%; }
+.legend { position: absolute; bottom: 20px; right: 20px; background: rgba(250,247,240,0.92); padding: 10px 14px; border-radius: 4px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; border: 1px solid #c8b896; }
+.legend-item { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.legend-divider { height: 1px; background: #c8b896; margin: 6px 0; }
+.legend-toggle { cursor: pointer; user-select: none; font-size: 11px; }
+.legend-toggle input { margin: 0; cursor: pointer; }
+.drop-zone { border: 2px dashed #c8b896; border-radius: 8px; padding: 16px; text-align: center; color: #8b7355; font-size: 13px; cursor: pointer; transition: border-color 0.2s, background 0.2s; background: #faf7f0; }
+.drop-zone:hover, .drop-zone.dragover { border-color: var(--vermillion); background: #fdf5f0; color: var(--vermillion); }
+.drop-zone .hint { display: block; }
+.drop-wrap { position: relative; }
+.ocr-progress { display: none; align-items: center; gap: 8px; color: #666; font-size: 12px; margin-top: 8px; }
+.ocr-progress.active { display: flex; }
+.thumb-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* 全局报错提示条 */
+.error-toast { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: #c23b22; color: #fff; padding: 10px 16px; font-size: 13px; font-family: monospace; white-space: pre-wrap; line-height: 1.5; box-shadow: 0 2px 12px rgba(0,0,0,0.3); cursor: pointer; }
+.error-toast.show { display: block; }
+.error-toast .error-count { font-weight: bold; margin-right: 8px; }
+.thumb-item { position: relative; width: 72px; height: 72px; border: 2px solid #e0e0e0; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+.thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+.thumb-item .thumb-idx { position: absolute; top: 2px; left: 2px; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px; }
+.thumb-item .thumb-del { position: absolute; top: 2px; right: 2px; background: #d62839; color: #fff; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 12px; cursor: pointer; line-height: 1; }
+.thumb-status { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(76,175,80,0.85); color: #fff; font-size: 9px; text-align: center; padding: 1px 0; }
+.thumb-status.error { background: rgba(214,40,57,0.85); }
+.batch-controls { display: none; gap: 8px; margin-top: 8px; }
+.batch-controls.active { display: flex; }
+.batch-review { display: none; flex-direction: column; gap: 8px; margin-top: 8px; }
+.batch-review.active { display: flex; }
+.batch-review textarea { min-height: 120px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; line-height: 1.5; resize: vertical; font-family: inherit; }
+.batch-progress-bar { height: 4px; background: #e0e0e0; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.batch-progress-fill { height: 100%; background: #4caf50; transition: width 0.3s; width: 0; border-radius: 2px; }
+.small { font-size: 11px; color: #999; margin-top: 4px; display: block; }
+.maplibregl-popup { max-width: 240px !important; }
+.maplibregl-popup-content { padding: 12px; border-radius: 8px; font-size: 13px; }
+.error { color: #d62839; font-size: 13px; }
+.loading { display: none; align-items: center; gap: 8px; color: #666; font-size: 14px; }
+.loading.active { display: flex; }
+.spinner { width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #e63946; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.pipeline-progress { display: none; flex-direction: column; gap: 4px; padding: 8px 0; }
+.pipeline-progress.active { display: flex; }
+.pipeline-stage { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #999; }
+.pipeline-stage .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #ddd; flex-shrink: 0; transition: all 0.3s; }
+.pipeline-stage.done { color: #333; }
+.pipeline-stage.done .dot { background: #4caf50; border-color: #4caf50; }
+.pipeline-stage.active { color: #e63946; font-weight: bold; }
+.pipeline-stage.active .dot { background: #fff; border-color: #e63946; animation: pulse 1s infinite; }
+.pipeline-stage.error { color: #d62839; }
+.pipeline-stage.error .dot { background: #d62839; border-color: #d62839; }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+.editable-field { border: 1px solid transparent; border-radius: 2px; padding: 2px 4px; font-size: 13px; background: transparent; font-family: inherit; transition: border 0.2s; }
+.editable-field:hover { border-color: #c8b896; background: #faf7f0; }
+.editable-field:focus { border-color: var(--vermillion); background: #faf7f0; outline: none; }
+.editable-field.wide { width: 100%; }
+.del-btn { background: none; border: none; color: #8b7355; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
+.del-btn:hover { color: var(--vermillion); }
+.add-btn { background: none; border: 1px dashed #c8b896; border-radius: 2px; color: #8b7355; cursor: pointer; font-size: 12px; padding: 2px 8px; }
+.add-btn:hover { border-color: var(--vermillion); color: var(--vermillion); }
+.render-btn { padding: 6px 14px; background: var(--vermillion); color: #fff; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
+.render-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.render-btn.active { animation: glow 0.6s infinite alternate; }
+@keyframes glow { from { box-shadow: 0 0 4px var(--vermillion); } to { box-shadow: 0 0 12px var(--vermillion); } }
+/* ── 模式切换 ── */
+.input-only, .view-only { display: none; flex-direction: column; gap: 12px; }
+body:not(.mode-view) .input-only { display: flex; }
+body.mode-view .view-only { display: flex; }
+.btn-back { padding: 6px 14px; background: none; border: 1px solid #8b7355; color: var(--ink); border-radius: 4px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+.btn-back:hover { background: #f0e8d8; border-color: var(--ink); }
+.map-guide { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(44,44,44,0.65); color: var(--paper); padding: 14px 22px; border-radius: 4px; font-size: 14px; text-align: center; z-index: 5; pointer-events: none; transition: opacity 0.3s; }
+.map-guide.hidden { opacity: 0; }
+/* ── 时间轴 UI ── */
+.timeline-wrap { display: none; margin-top: 8px; }
+.timeline-wrap.active { display: block; }
+.timeline-bar { display: flex; align-items: center; gap: 0; padding: 8px 0; overflow-x: auto; }
+.timeline-node { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 24px; }
+.timeline-node .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #ccc; background: #fff; transition: all 0.3s; cursor: pointer; flex-shrink: 0; }
+.timeline-node.done .dot { background: #4caf50; border-color: #4caf50; }
+.timeline-node.current .dot { background: #e63946; border-color: #e63946; box-shadow: 0 0 6px #e63946; }
+.timeline-node.pending .dot { background: #f0f0f0; border-color: #ddd; }
+.timeline-line { flex: 1; height: 2px; background: #ddd; min-width: 16px; align-self: center; }
+.timeline-line.done { background: #4caf50; }
+.timeline-node-label { font-size: 9px; color: #999; margin-top: 2px; white-space: nowrap; }
+.step-controls { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.step-btn { padding: 6px 16px; background: var(--vermillion); color: #fff; border: none; border-radius: 4px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+.step-btn:hover { background: #a01d14; }
+.step-btn:disabled { background: #ccc; cursor: not-allowed; }
+.step-indicator { font-size: 14px; font-weight: bold; color: #333; min-width: 60px; text-align: center; }
+.event-card { background: #faf7f0; border: 1px solid #c8b896; border-radius: 4px; padding: 10px 12px; margin-top: 8px; }
+.event-card .event-type { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-right: 6px; }
+.event-type-march { background: #dbeafe; color: #1e40af; }
+.event-type-battle { background: #fee2e2; color: #991b1b; }
+.event-type-encamp { background: #fef3c7; color: #92400e; }
+.event-type-retreat { background: #f3e8ff; color: #6b21a8; }
+.event-card .event-desc { font-size: 13px; margin: 6px 0; color: #333; line-height: 1.5; }
+.event-card .event-meta { font-size: 11px; color: #666; }
+.event-card .event-meta span { margin-right: 8px; }
+.panel-header-title { flex: 1; }
+.panel-header .btn-back { color: #fff; border-color: rgba(255,255,255,0.4); display: none; }
+body.mode-view .panel-header .btn-back { display: inline-block; }
+body.mode-view .panel-header small { display: none; }
+
+/* ── 绍宋漫画主题 (tactical 级) ── */
+.theme-comic .maplibregl-map {
+  font-family: "SimSun", "Songti SC", "Noto Serif SC", "KaiTi", serif;
+}
+/* 印章装饰 */
+.comic-seal {
+  position: absolute; bottom: 24px; right: 24px; z-index: 10;
+  pointer-events: none; opacity: 0.85;
+  transform: rotate(-15deg);
+}
+.comic-seal svg { width: 52px; height: 52px; }
+.comic-seal.hidden { display: none; }
+/* 漫画主题下地图边框为细线 */
+.theme-comic.map-wrap { border: 1px solid var(--ink); }

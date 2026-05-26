@@ -9,33 +9,41 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
       - name: Run ruff check
         run: uv run ruff check .
 
   type-check:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
       - name: Run mypy
         run: uv run mypy app.py shaosongmap/
 
   test:
     needs: [lint]
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
       - name: Run tests with coverage
         run: DEEPSEEK_API_KEY=test-key PYTHONPATH=. uv run pytest tests/ -v --cov=shaosongmap --cov-fail-under=70
 
@@ -49,3 +57,13 @@ jobs:
           python-version: "3.10"
       - name: Run bandit
         run: uv run bandit -r shaosongmap/ app.py -ll
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.10"
+      - name: Run pip-audit
+        run: uv run pip-audit

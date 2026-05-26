@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import functools
 import json
 import logging
 from difflib import SequenceMatcher
@@ -45,6 +46,7 @@ def _fuzzy_match(text: str, candidate: str) -> float:
     return SequenceMatcher(None, text.lower(), candidate.lower()).ratio()
 
 
+@functools.lru_cache(maxsize=1)
 def _load_chgis_data() -> list[dict]:
     """加载 CHGIS v6 数据集。
 

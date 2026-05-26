@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: GitHub Actions 自动测试
 
@@ -65,17 +65,3 @@
 
 - **WHEN** 项目依赖包含已知 CVE 漏洞
 - **THEN** CI Stage 5 报告漏洞详情但不阻塞流程，开发者可审阅后决定是否修复
-
-### Requirement: CI 依赖管理
-
-系统 SHALL 通过 pyproject.toml 的 `[dependency-groups]` 管理 CI 依赖，废弃 `requirements-ci.txt`。
-
-uv 依赖组 MUST 区分：
-- `[dependency-groups].dev`：开发工具（ruff、mypy、pytest、pytest-cov、bandit、pre-commit）
-
-CI 工作流中 SHALL 使用 `uv sync --group dev` 安装所有质量工具。
-
-#### Scenario: CI 通过 uv 安装依赖
-
-- **WHEN** CI workflow 执行 `uv sync --group dev`
-- **THEN** 安装所有开发和测试依赖，无需独立 requirements-ci.txt

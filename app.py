@@ -51,7 +51,7 @@ async def _init_settings():
     from shaosongmap.config import Settings
 
     try:
-        s = Settings()
+        s = Settings()  # type: ignore[call-arg]
     except Exception as e:
         logging.error('配置校验失败: %s', e)
         raise SystemExit(1) from e
@@ -98,7 +98,7 @@ async def _request_id_middleware(request: Request, call_next):
 
 # 速率限制器注册到 app.state
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 @app.exception_handler(HTTPException)

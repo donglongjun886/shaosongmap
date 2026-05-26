@@ -1,10 +1,4 @@
-# Configuration Validation 配置校验
-
-## Purpose
-
-定义应用启动时的配置校验机制，确保必需配置完整时才能启动。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 启动时配置完整性校验
 

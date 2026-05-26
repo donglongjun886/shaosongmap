@@ -1,0 +1,48 @@
+# Python 编译产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.whl
+
+# 虚拟环境
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 静态检查
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# 环境配置（不应进镜像）
+.env
+.env.local
+
+# OpenSpec
+openspec/
+
+# 开发工具
+.claude/
+scripts/
+
+# 测试
+tests/
+htmlcov/
+.coverage
+coverage.xml
+
+# 文档
+*.md
+LICENSE

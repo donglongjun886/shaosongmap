@@ -16,6 +16,7 @@ from slowapi.errors import RateLimitExceeded
 
 from shaosongmap.config import limiter, settings
 from shaosongmap.routers.extract import router as extract_router
+from shaosongmap.routers.health import router as health_router
 from shaosongmap.routers.ocr import router as ocr_router
 from shaosongmap.routers.render import router as render_router
 
@@ -64,7 +65,7 @@ async def _init_settings():
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    """应用生命周期：启动时校验配置并预加载 PaddleOCR 模型。"""
+    """应用生命周期：启动时校验配置并预加载 PaddleOCR 模型，关闭时释放资源。"""
     s = await _init_settings()
     _setup_logging(s.log_level, s.log_format)
 
@@ -74,8 +75,13 @@ async def _lifespan(_app: FastAPI):
     from shaosongmap.ocr import _get_ocr
 
     _get_ocr()
+    _app.state.ocr_ready = True
     logger.info('PaddleOCR 模型预热完成')
     yield
+    # --- 关闭阶段 ---
+    logger.info('正在关闭应用，释放资源...')
+    _app.state.ocr_ready = False
+    logger.info('应用已关闭')
 
 
 app = FastAPI(
@@ -119,6 +125,7 @@ app.add_middleware(
 )
 
 app.include_router(extract_router)
+app.include_router(health_router)
 app.include_router(ocr_router)
 app.include_router(render_router)
 

@@ -1,10 +1,6 @@
-# Structured Logging 结构化日志
+# Structured Logging 结构化日志 (Delta)
 
-## Purpose
-
-定义日志输出格式规范，支持开发环境的文本格式和生产环境的 JSON 格式，并实现请求 ID 追踪。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 结构化 JSON 日志输出
 
@@ -20,7 +16,7 @@
 - `request_id`：请求唯一标识（如有）
 - `message`：日志消息
 
-日志覆盖范围 SHALL 覆盖以下模块：
+日志覆盖范围 SHALL 扩展至以下模块：
 - 所有 `routers/` 模块（extract、ocr、render、health）
 - 所有 `services/` 模块（pipeline、geo、geojson、unit_banner）
 - 顶层业务模块（extractor、geocoder、ocr）
@@ -61,6 +57,8 @@
 
 - **WHEN** `services/pipeline.py` 的 `run_pipeline()` 被调用
 - **THEN** 其日志记录 SHALL 携带与当前 HTTP 请求相同的 `request_id`
+
+## ADDED Requirements
 
 ### Requirement: 全模块日志覆盖
 

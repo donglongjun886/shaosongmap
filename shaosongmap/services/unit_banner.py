@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 
 from shaosongmap.models import ForceUnit, GeoFeature, UnitState
 from shaosongmap.services.geo import angle_for_direction, compute_data_diagonal, offset_point
+
+logger = logging.getLogger(__name__)
 
 
 def make_unit_banner_features(
@@ -174,6 +177,13 @@ def make_unit_geojson(
     if not all_seqs:
         return []
 
+    logger.info(
+        '生成部队 GeoJSON: %d 部队, %d 状态, %d 步骤',
+        len(units),
+        len(unit_states),
+        len(all_seqs),
+    )
+
     geojson_features: list[dict] = []
 
     # 对每个步骤，计算每个部队的「有效状态」（最新且 ≤ 当前步骤）
@@ -216,4 +226,5 @@ def make_unit_geojson(
             )
             geojson_features.extend(feat_list)
 
+    logger.info('部队 GeoJSON 完成: %d 要素', len(geojson_features))
     return geojson_features

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import cast
 
@@ -13,6 +14,8 @@ from shaosongmap.schemas import ExtractResponse, RenderRequest
 from shaosongmap.services.geo import _DYNASTY_YEARS
 from shaosongmap.services.geojson import build_routes, make_geojson
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix='/api/v1')
 
 
@@ -22,6 +25,12 @@ async def render_modified(request: RenderRequest):
 
     用于前端可编辑面板的「重新渲染」功能。
     """
+    logger.info(
+        '渲染请求: campaign=%s, %d 地名, %d 路线',
+        request.campaign_name,
+        len(request.places),
+        len(request.routes),
+    )
 
     # 重建 Pydantic 模型
     try:
@@ -29,6 +38,7 @@ async def render_modified(request: RenderRequest):
         places = [Place(**p) for p in request.places]
         routes = [Route(**r) for r in request.routes]
     except Exception as e:
+        logger.warning('渲染请求数据格式错误: %s', e)
         raise HTTPException(
             status_code=400,
             detail={
@@ -57,6 +67,7 @@ async def render_modified(request: RenderRequest):
             dynasty_end_yr=dyn_end,
         )
     except Exception as e:
+        logger.error('地理编码失败: %s', e)
         raise HTTPException(
             status_code=422,
             detail={

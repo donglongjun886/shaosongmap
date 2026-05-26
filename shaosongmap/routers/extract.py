@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -12,6 +14,8 @@ from shaosongmap.config import limiter
 from shaosongmap.schemas import ExtractRequest
 from shaosongmap.services.pipeline import run_extract_pipeline
 from shaosongmap.utils import sse_event
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/v1')
 
@@ -25,10 +29,13 @@ async def extract_campaign(body: ExtractRequest, request: Request):
     最终以 result 事件返回完整数据。
     """
     if not body.text.strip():
+        logger.warning('提取请求文本为空')
         raise HTTPException(
             status_code=422,
             detail={'error': {'code': 'INVALID_INPUT', 'message': '战役文本不能为空'}},
         )
+
+    logger.info('提取请求: 文本长度=%d, mode=%s', len(body.text), body.mode or 'standard')
 
     async def event_stream():
         for stage in run_extract_pipeline(body.text, body.dynasty, body.mode):

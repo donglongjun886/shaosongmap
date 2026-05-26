@@ -2,42 +2,60 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from shaosongmap.config import limiter, settings
+from shaosongmap.metrics import (
+    get_metrics,
+    http_request_duration_seconds,
+    http_requests_total,
+)
 from shaosongmap.routers.extract import router as extract_router
 from shaosongmap.routers.health import router as health_router
 from shaosongmap.routers.ocr import router as ocr_router
 from shaosongmap.routers.render import router as render_router
 
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('request_id', default='-')
+
+
+class _RequestIdFilter(logging.Filter):
+    """将 contextvars 中的 request_id 注入每条日志记录。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
+
 
 def _setup_logging(log_level: str, log_format: str) -> None:
-    """配置全局日志格式。"""
+    """配置全局日志格式，注入 request_id。"""
     handler = logging.StreamHandler()
+    handler.addFilter(_RequestIdFilter())
 
     if log_format == 'json':
         from pythonjsonlogger.json import JsonFormatter
 
         handler.setFormatter(
             JsonFormatter(
-                fmt='%(asctime)s %(levelname)s %(name)s %(message)s',
+                fmt='%(asctime)s %(levelname)s %(name)s %(request_id)s %(message)s',
                 datefmt='%Y-%m-%dT%H:%M:%S',
             )
         )
     else:
         handler.setFormatter(
             logging.Formatter(
-                fmt='%(asctime)s %(levelname)s %(name)s %(message)s',
+                fmt='%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S',
             )
         )
@@ -96,9 +114,42 @@ app = FastAPI(
 async def _request_id_middleware(request: Request, call_next):
     """为每个 HTTP 请求注入唯一标识符，支持上游传入复用。"""
     request_id = request.headers.get('X-Request-ID', uuid.uuid4().hex[:12])
+    request_id_var.set(request_id)
     request.state.request_id = request_id
     response = await call_next(request)
     response.headers['X-Request-ID'] = request_id
+    return response
+
+
+@app.middleware('http')
+async def _metrics_middleware(request: Request, call_next):
+    """自动记录 HTTP 请求延迟和状态码指标。"""
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - start
+    endpoint = request.url.path
+    http_requests_total.labels(
+        method=request.method, endpoint=endpoint, status=str(response.status_code)
+    ).inc()
+    http_request_duration_seconds.labels(method=request.method, endpoint=endpoint).observe(elapsed)
+    return response
+
+
+_CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; "
+    "connect-src 'self'; "
+    "font-src 'self' https://cdn.jsdelivr.net"
+)
+
+
+@app.middleware('http')
+async def _security_headers_middleware(request: Request, call_next):
+    """为每个响应添加安全响应头（CSP 等）。"""
+    response = await call_next(request)
+    response.headers['Content-Security-Policy'] = _CSP_POLICY
     return response
 
 
@@ -128,6 +179,13 @@ app.include_router(extract_router)
 app.include_router(health_router)
 app.include_router(ocr_router)
 app.include_router(render_router)
+
+
+@app.get('/metrics')
+async def _metrics_endpoint():
+    """Prometheus 格式指标端点。"""
+    return PlainTextResponse(content=get_metrics(), media_type='text/plain; version=0.0.4')
+
 
 # 挂载静态文件（必须在所有路由之后）
 static_dir = Path(__file__).parent / 'static'

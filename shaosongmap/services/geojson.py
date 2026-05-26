@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from shaosongmap.models import GeoFeature, RouteLine, TimelineEvent
+
+logger = logging.getLogger(__name__)
 
 
 def compute_step_map(events: list[TimelineEvent]) -> dict[str, int]:
@@ -56,6 +60,7 @@ def build_routes(
                 )
             )
 
+    logger.info('构建路线: %d 输入 → %d 有效线段', len(places), len(route_lines))
     return route_lines
 
 
@@ -124,6 +129,12 @@ def make_geojson(
                 }
             )
 
+    logger.info(
+        '生成 GeoJSON: %d 标记, %d 路线, timeline=%s',
+        len(geojson_features),
+        len(routes),
+        step_map is not None,
+    )
     return {
         'type': 'FeatureCollection',
         'features': geojson_features,

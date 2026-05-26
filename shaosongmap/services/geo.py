@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import math
+
+logger = logging.getLogger(__name__)
 
 # 朝代时间范围映射
 _DYNASTY_YEARS: dict[str, tuple[int, int]] = {

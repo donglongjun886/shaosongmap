@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 from difflib import SequenceMatcher
 from pathlib import Path
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 from shaosongmap.models import GeoFeature, Place
 
@@ -61,6 +64,7 @@ def _load_chgis_data() -> list[dict]:
         FileNotFoundError: CHGIS 数据文件不存在
     """
     if not _CHGIS_V6_CSV.exists():
+        logger.warning('CHGIS 数据文件缺失: %s，全部地名为 LLM 推断', _CHGIS_V6_CSV)
         raise FileNotFoundError(
             f'CHGIS v6 数据文件不存在: {_CHGIS_V6_CSV}\n请将 CHGIS v6 点数据放置于此路径'
         )
@@ -188,6 +192,7 @@ def infer_with_llm(
         # LLM 可能返回 {"result": [...]} 或直接返回数组
         items = data if isinstance(data, list) else data.get('result', [])
     except json.JSONDecodeError:
+        logger.warning('LLM 返回非 JSON 格式，标记为 unknown')
         return [GeoFeature(name=name, source='unknown') for name in place_names]
 
     results: list[GeoFeature] = []
@@ -237,7 +242,7 @@ def geocode(
     unmatched: list[str] = []
     results: list[GeoFeature] = []
 
-    # 第一遍：CHGIS 匹配
+    logger.info('地理编码开始: %d 地名', len(places))  # 第一遍：CHGIS 匹配
     for place in places:
         chgis = None
         try:
@@ -258,10 +263,17 @@ def geocode(
 
     # 第二遍：LLM 推断兜底
     if unmatched:
+        logger.info('LLM 推断兜底: %d 个地名', len(unmatched))
         llm_results = infer_with_llm(unmatched, context_text)
         for feat in llm_results:
             if feat.name in place_map:
                 feat.place_type = place_map[feat.name].place_type
         results.extend(llm_results)
 
+    logger.info(
+        '地理编码完成: %d CHGIS + %d LLM + %d unknown',
+        sum(1 for r in results if r.source == 'chgis'),
+        sum(1 for r in results if r.source == 'llm_infer'),
+        sum(1 for r in results if r.source == 'unknown'),
+    )
     return results

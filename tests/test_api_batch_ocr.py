@@ -27,6 +27,12 @@ def _make_files(count: int) -> list:
     return [('files', (f'screenshot_{i}.png', _make_fake_png(), 'image/png')) for i in range(count)]
 
 
+def _error_msg(resp) -> str:
+    """从响应中提取错误消息，兼容新旧格式。"""
+    data = resp.json()
+    return data.get('error', {}).get('message', '') or data.get('detail', '')
+
+
 @patch('shaosongmap.routers.ocr.ocr_main')
 def test_batch_success(mock_ocr):
     """批量上传 3 张截图，返回拼接后文本。"""
@@ -36,7 +42,7 @@ def test_batch_success(mock_ocr):
         ('诸葛亮献策后大军分三路出发', 5),
     ]
 
-    resp = client.post('/api/ocr/batch', files=_make_files(3))
+    resp = client.post('/api/v1/ocr/batch', files=_make_files(3))
     assert resp.status_code == 200
 
     body = resp.text
@@ -48,14 +54,14 @@ def test_batch_success(mock_ocr):
 
 def test_batch_too_many_files():
     """上传超过 10 张返回 400。"""
-    resp = client.post('/api/ocr/batch', files=_make_files(11))
+    resp = client.post('/api/v1/ocr/batch', files=_make_files(11))
     assert resp.status_code == 400
-    assert '最多' in resp.json()['detail']
+    assert '最多' in _error_msg(resp)
 
 
 def test_batch_empty():
     """上传 0 张返回 422（FastAPI 校验 files 必填）。"""
-    resp = client.post('/api/ocr/batch', files=[])
+    resp = client.post('/api/v1/ocr/batch', files=[])
     assert resp.status_code == 422
 
 
@@ -65,9 +71,9 @@ def test_batch_wrong_format():
         ('files', ('ok.png', _make_fake_png(), 'image/png')),
         ('files', ('bad.gif', b'GIF89a', 'image/gif')),
     ]
-    resp = client.post('/api/ocr/batch', files=files)
+    resp = client.post('/api/v1/ocr/batch', files=files)
     assert resp.status_code == 400
-    assert '格式不支持' in resp.json()['detail']
+    assert '格式不支持' in _error_msg(resp)
 
 
 def test_batch_oversized():
@@ -76,9 +82,9 @@ def test_batch_oversized():
         ('files', ('ok.png', _make_fake_png(), 'image/png')),
         ('files', ('big.png', b'x' * (10 * 1024 * 1024 + 1), 'image/png')),
     ]
-    resp = client.post('/api/ocr/batch', files=files)
+    resp = client.post('/api/v1/ocr/batch', files=files)
     assert resp.status_code == 413
-    assert '超过' in resp.json()['detail']
+    assert '超过' in _error_msg(resp)
 
 
 def test_batch_empty_file():
@@ -87,9 +93,9 @@ def test_batch_empty_file():
         ('files', ('ok.png', _make_fake_png(), 'image/png')),
         ('files', ('empty.png', b'', 'image/png')),
     ]
-    resp = client.post('/api/ocr/batch', files=files)
+    resp = client.post('/api/v1/ocr/batch', files=files)
     assert resp.status_code == 400
-    assert '不能为空' in resp.json()['detail']
+    assert '不能为空' in _error_msg(resp)
 
 
 @patch('shaosongmap.routers.ocr.ocr_main')
@@ -104,7 +110,7 @@ def test_batch_ocr_failure(mock_ocr):
         ('files', ('good.png', _make_fake_png(), 'image/png')),
         ('files', ('bad.png', _make_fake_png(), 'image/png')),
     ]
-    resp = client.post('/api/ocr/batch', files=files)
+    resp = client.post('/api/v1/ocr/batch', files=files)
     assert resp.status_code == 200
     body = resp.text
     assert 'event: error' in body
@@ -119,7 +125,7 @@ def test_batch_progress_sequence(mock_ocr):
         ('文本片段二也包含了足够的中文字符内容', 3),
     ]
 
-    resp = client.post('/api/ocr/batch', files=_make_files(2))
+    resp = client.post('/api/v1/ocr/batch', files=_make_files(2))
     assert resp.status_code == 200
     body = resp.text
 

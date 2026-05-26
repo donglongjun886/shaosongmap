@@ -44,6 +44,20 @@ class RenderRequest(BaseModel):
     scale: str | None = Field(default=None, description='军事行动规模')
 
 
+class ErrorDetail(BaseModel):
+    """统一错误体结构。"""
+
+    code: str = Field(description='错误码，大写下划线格式（如 INVALID_INPUT）')
+    message: str = Field(description='面向用户的中文简述')
+    detail: str = Field(default='', description='技术细节（可选）')
+
+
+class ErrorResponse(BaseModel):
+    """统一错误响应外层。"""
+
+    error: ErrorDetail
+
+
 class OcrResponse(BaseModel):
     """OCR 响应体。"""
 

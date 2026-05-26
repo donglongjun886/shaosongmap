@@ -37,12 +37,12 @@ def _parse_events(body: str) -> list[tuple[str, dict]]:
     return events
 
 
-@patch('shaosongmap.routers.extract.extract')
+@patch('shaosongmap.services.pipeline.extract')
 def test_sse_event_format(mock_extract):
     """SSE 流包含正确的事件类型序列。"""
     mock_extract.return_value = _patch_extract()
 
-    resp = client.post('/api/extract', json={'text': '测试文本'})
+    resp = client.post('/api/v1/extract', json={'text': '测试文本'})
     assert resp.status_code == 200
     assert resp.headers['content-type'].startswith('text/event-stream')
     assert resp.headers['cache-control'] == 'no-cache'
@@ -65,12 +65,12 @@ def test_sse_event_format(mock_extract):
         assert 'detail' in d
 
 
-@patch('shaosongmap.routers.extract.extract')
+@patch('shaosongmap.services.pipeline.extract')
 def test_sse_result_contains_all_fields(mock_extract):
     """Result 事件包含完整的响应字段。"""
     mock_extract.return_value = _patch_extract()
 
-    resp = client.post('/api/extract', json={'text': '测试文本'})
+    resp = client.post('/api/v1/extract', json={'text': '测试文本'})
     events = _parse_events(resp.text)
     result = next(d for t, d in events if t == 'result')
     assert 'extract_id' in result
@@ -82,14 +82,14 @@ def test_sse_result_contains_all_fields(mock_extract):
     assert result['geojson']['type'] == 'FeatureCollection'
 
 
-@patch('shaosongmap.routers.extract.extract')
+@patch('shaosongmap.services.pipeline.extract')
 def test_sse_geocode_error_handling(mock_extract):
     """Geocode 阶段异常通过 SSE error 事件返回。"""
     mock_extract.return_value = _patch_extract()
 
     # 模拟 geocode 失败：传入非法数据导致异常
-    with patch('shaosongmap.routers.extract.geocode', side_effect=Exception('CHGIS 数据不可用')):
-        resp = client.post('/api/extract', json={'text': '测试文本'})
+    with patch('shaosongmap.services.pipeline.geocode', side_effect=Exception('CHGIS 数据不可用')):
+        resp = client.post('/api/v1/extract', json={'text': '测试文本'})
         events = _parse_events(resp.text)
 
         # 第一个是 extract_done progress

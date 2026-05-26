@@ -13,10 +13,10 @@ from shaosongmap.schemas import ExtractResponse, RenderRequest
 from shaosongmap.services.geo import _DYNASTY_YEARS
 from shaosongmap.services.geojson import build_routes, make_geojson
 
-router = APIRouter()
+router = APIRouter(prefix='/api/v1')
 
 
-@router.post('/api/render', response_model=ExtractResponse)
+@router.post('/render', response_model=ExtractResponse)
 async def render_modified(request: RenderRequest):
     """接收用户修正后的提取数据，跳过 LLM 提取，直接 geocode + GeoJSON。
 
@@ -29,7 +29,12 @@ async def render_modified(request: RenderRequest):
         places = [Place(**p) for p in request.places]
         routes = [Route(**r) for r in request.routes]
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'数据格式错误: {e}') from e
+        raise HTTPException(
+            status_code=400,
+            detail={
+                'error': {'code': 'INVALID_FORMAT', 'message': '数据格式错误', 'detail': str(e)}
+            },
+        ) from e
 
     campaign = CampaignExtract(
         campaign_name=request.campaign_name,
@@ -52,7 +57,12 @@ async def render_modified(request: RenderRequest):
             dynasty_end_yr=dyn_end,
         )
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f'地名匹配失败: {e}') from e
+        raise HTTPException(
+            status_code=422,
+            detail={
+                'error': {'code': 'GEOCODE_FAILED', 'message': '地名匹配失败', 'detail': str(e)}
+            },
+        ) from e
 
     route_lines = build_routes(campaign.routes, features)
     geojson = make_geojson(features, route_lines)

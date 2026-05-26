@@ -24,15 +24,33 @@
 ```
 shaosongmap/              # 主包
 ├── __init__.py
+├── config.py             # 配置中心 (pydantic-settings)
+├── schemas.py            # Pydantic 请求/响应模型
+├── models.py             # 领域数据模型（战役、兵力、行军路线等）
 ├── extractor.py          # 调用 DeepSeek API，从战役文本提取结构化 JSON
 ├── geocoder.py           # 古地名 → CHGIS v6 经纬度匹配
-├── models.py             # Pydantic 数据模型（战役、兵力、行军路线等）
+├── ocr.py                # PaddleOCR 截图识别与文本清洗
+├── utils.py              # 工具函数
+├── routers/              # 接口层 (FastAPI 路由 + SSE 序列化)
+│   ├── extract.py        # /api/v1/extract
+│   ├── ocr.py            # /api/v1/ocr
+│   └── render.py         # /api/v1/render
+├── services/             # 业务层 (纯逻辑，不依赖 HTTP)
+│   ├── pipeline.py       # 提取管道编排
+│   ├── geo.py            # 地理计算
+│   ├── geojson.py        # GeoJSON 构建
+│   └── unit_banner.py    # 部队旗帜标记
 app.py                    # FastAPI 应用入口
 scripts/
-├── parse_cli.py          # CLI 脚本：输入文本 → 输出结构化 JSON/GeoJSON
+├── build_chgis.py        # CHGIS v6 数据预处理
+├── automate_review.py    # 自动化视觉审查
+├── vision.py             # Qwen-VL 视觉审查工具
 tests/
+├── test_api.py
 ├── test_extractor.py
 ├── test_geocoder.py
+├── test_ocr.py
+└── ...
 data/
 ├── chgis_v6/             # CHGIS v6 数据集（古地名 + 坐标）
 ```

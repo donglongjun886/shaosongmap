@@ -22,6 +22,12 @@ def _make_fake_png() -> bytes:
     return buf.read()
 
 
+def _error_msg(resp) -> str:
+    """从响应中提取错误消息，兼容新旧格式。"""
+    data = resp.json()
+    return data.get('error', {}).get('message', '') or data.get('detail', '')
+
+
 @patch('shaosongmap.routers.ocr.ocr_main')
 def test_ocr_success(mock_ocr):
     """正常上传 PNG 返回清洗文本。"""
@@ -29,7 +35,7 @@ def test_ocr_success(mock_ocr):
     mock_ocr.return_value = (mock_text, 15)
 
     resp = client.post(
-        '/api/ocr',
+        '/api/v1/ocr',
         files={'file': ('screenshot.png', _make_fake_png(), 'image/png')},
     )
     assert resp.status_code == 200
@@ -41,21 +47,21 @@ def test_ocr_success(mock_ocr):
 def test_ocr_wrong_format():
     """非 PNG/JPEG 文件返回 400。"""
     resp = client.post(
-        '/api/ocr',
+        '/api/v1/ocr',
         files={'file': ('test.gif', b'GIF89a', 'image/gif')},
     )
     assert resp.status_code == 400
-    assert 'PNG' in resp.json()['detail']
+    assert 'PNG' in _error_msg(resp)
 
 
 def test_ocr_empty_file():
     """空图片返回 400。"""
     resp = client.post(
-        '/api/ocr',
+        '/api/v1/ocr',
         files={'file': ('empty.png', b'', 'image/png')},
     )
     assert resp.status_code == 400
-    assert '不能为空' in resp.json()['detail']
+    assert '不能为空' in _error_msg(resp)
 
 
 @patch('shaosongmap.routers.ocr.ocr_main')
@@ -64,8 +70,8 @@ def test_ocr_insufficient_text(mock_ocr):
     mock_ocr.side_effect = ValueError('未能从截图中提取到足够的文本（仅 15 字符）')
 
     resp = client.post(
-        '/api/ocr',
+        '/api/v1/ocr',
         files={'file': ('blur.png', _make_fake_png(), 'image/png')},
     )
     assert resp.status_code == 422
-    assert '足够的文本' in resp.json()['detail']
+    assert '足够的文本' in _error_msg(resp)

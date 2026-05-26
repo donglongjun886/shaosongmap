@@ -5,24 +5,31 @@ from __future__ import annotations
 import logging
 import time
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from shaosongmap.config import limiter
 from shaosongmap.ocr import merge_texts, ocr_main
 from shaosongmap.schemas import OcrResponse
 from shaosongmap.utils import sse_event
 
-logger = logging.getLogger('shaosongmap')
+logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(prefix='/api/v1')
 
 _ALLOWED_IMAGE_TYPES = {'image/png', 'image/jpeg'}
 _MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 _MAX_BATCH_SIZE = 10
 
 
-@router.post('/api/ocr', response_model=OcrResponse)
-async def ocr_image(file: UploadFile = File(...)):
+def _error_detail(code: str, message: str, detail: str = '') -> dict:
+    """构建统一错误响应体。"""
+    return {'error': {'code': code, 'message': message, 'detail': detail}}
+
+
+@router.post('/ocr', response_model=OcrResponse)
+@limiter.limit('10/minute')
+async def ocr_image(file: UploadFile = File(...), request: Request = None):  # type: ignore[assignment]
     """接收截图上传，OCR 识别后返回清洗文本。
 
     支持 PNG 和 JPEG 格式，最大 10MB。
@@ -31,18 +38,23 @@ async def ocr_image(file: UploadFile = File(...)):
     if file.content_type not in _ALLOWED_IMAGE_TYPES:
         raise HTTPException(
             status_code=400,
-            detail='仅支持 PNG 和 JPEG 格式',
+            detail=_error_detail('UNSUPPORTED_MEDIA', '仅支持 PNG 和 JPEG 格式'),
         )
 
     image_bytes = await file.read()
     if len(image_bytes) > _MAX_IMAGE_SIZE:
         raise HTTPException(
             status_code=413,
-            detail=f'图片大小不能超过 {_MAX_IMAGE_SIZE // 1024 // 1024}MB',
+            detail=_error_detail(
+                'FILE_TOO_LARGE', f'图片大小不能超过 {_MAX_IMAGE_SIZE // 1024 // 1024}MB'
+            ),
         )
 
     if len(image_bytes) == 0:
-        raise HTTPException(status_code=400, detail='图片不能为空')
+        raise HTTPException(
+            status_code=400,
+            detail=_error_detail('EMPTY_FILE', '图片不能为空'),
+        )
 
     try:
         t0 = time.perf_counter()
@@ -50,13 +62,17 @@ async def ocr_image(file: UploadFile = File(...)):
         elapsed = (time.perf_counter() - t0) * 1000
         logger.info('OCR完成: %d行 → %d字符, 耗时 %.0fms', raw_lines, len(text), elapsed)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=_error_detail('OCR_FAILED', str(e)),
+        ) from e
 
     return OcrResponse(text=text, raw_lines=raw_lines, elapsed_ms=round(elapsed))
 
 
-@router.post('/api/ocr/batch')
-async def ocr_batch(files: list[UploadFile] = File(...)):
+@router.post('/ocr/batch')
+@limiter.limit('5/minute')
+async def ocr_batch(files: list[UploadFile] = File(...), request: Request = None):  # type: ignore[assignment]
     """批量截图 OCR：接收多张截图，依次识别后去重拼接。
 
     通过 SSE 流式返回每张图的处理进度，最终返回拼接后的完整文本。
@@ -65,10 +81,13 @@ async def ocr_batch(files: list[UploadFile] = File(...)):
     if len(files) > _MAX_BATCH_SIZE:
         raise HTTPException(
             status_code=400,
-            detail=f'每次最多上传 {_MAX_BATCH_SIZE} 张截图',
+            detail=_error_detail('BATCH_TOO_LARGE', f'每次最多上传 {_MAX_BATCH_SIZE} 张截图'),
         )
     if len(files) == 0:
-        raise HTTPException(status_code=400, detail='请至少上传一张截图')
+        raise HTTPException(
+            status_code=400,
+            detail=_error_detail('EMPTY_BATCH', '请至少上传一张截图'),
+        )
 
     # 先读取所有文件内容，避免 StreamingResponse 中文件被提前关闭
     file_data: list[tuple[str, bytes]] = []
@@ -77,18 +96,23 @@ async def ocr_batch(files: list[UploadFile] = File(...)):
         if file.content_type not in _ALLOWED_IMAGE_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail=f'{label}截图格式不支持，仅支持 PNG 和 JPEG 格式',
+                detail=_error_detail(
+                    'UNSUPPORTED_MEDIA', f'{label}截图格式不支持，仅支持 PNG 和 JPEG'
+                ),
             )
         image_bytes = await file.read()
         if len(image_bytes) > _MAX_IMAGE_SIZE:
             raise HTTPException(
                 status_code=413,
-                detail=f'{label}截图大小超过 {_MAX_IMAGE_SIZE // 1024 // 1024}MB 限制',
+                detail=_error_detail(
+                    'FILE_TOO_LARGE',
+                    f'{label}截图大小超过 {_MAX_IMAGE_SIZE // 1024 // 1024}MB 限制',
+                ),
             )
         if len(image_bytes) == 0:
             raise HTTPException(
                 status_code=400,
-                detail=f'{label}截图不能为空',
+                detail=_error_detail('EMPTY_FILE', f'{label}截图不能为空'),
             )
         file_data.append((label, image_bytes))
 

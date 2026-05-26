@@ -45,6 +45,12 @@ def _patch_extract():
     )
 
 
+def _error_msg(resp) -> str:
+    """从响应中提取错误消息，兼容新旧格式。"""
+    data = resp.json()
+    return data.get('error', {}).get('message', '') or data.get('detail', '')
+
+
 def _parse_sse(body: str) -> list[tuple[str, dict]]:
     """解析 SSE 响应体，返回 [(event_type, data_dict), ...] 列表。"""
     events = []
@@ -62,13 +68,13 @@ def _parse_sse(body: str) -> list[tuple[str, dict]]:
     return events
 
 
-@patch('shaosongmap.routers.extract.extract')
+@patch('shaosongmap.services.pipeline.extract')
 def test_api_extract_success(mock_extract):
     """正常请求返回 SSE 流，最终包含 result 事件和 GeoJSON。"""
     mock_extract.return_value = _patch_extract()
 
     resp = client.post(
-        '/api/extract',
+        '/api/v1/extract',
         json={
             'text': '岳飞率三万兵马自襄阳经唐州直驱汴京。',
         },
@@ -91,17 +97,17 @@ def test_api_extract_success(mock_extract):
 
 def test_api_extract_empty_text():
     """空文本返回 422（前置校验，不启动 SSE 流）。"""
-    resp = client.post('/api/extract', json={'text': '   '})
+    resp = client.post('/api/v1/extract', json={'text': '   '})
     assert resp.status_code == 422
-    assert '不能为空' in resp.json()['detail']
+    assert '不能为空' in _error_msg(resp)
 
 
-@patch('shaosongmap.routers.extract.extract')
+@patch('shaosongmap.services.pipeline.extract')
 def test_api_extract_with_dynasty(mock_extract):
     """带朝代参数正常返回 SSE 流。"""
     mock_extract.return_value = _patch_extract()
     resp = client.post(
-        '/api/extract',
+        '/api/v1/extract',
         json={
             'text': '宋军北伐',
             'dynasty': '北宋',
@@ -113,11 +119,11 @@ def test_api_extract_with_dynasty(mock_extract):
     assert any(t == 'result' for t, _ in events)
 
 
-@patch('shaosongmap.routers.extract.extract')
+@patch('shaosongmap.services.pipeline.extract')
 def test_api_extract_llm_error(mock_extract):
     """Extractor 异常通过 SSE error 事件返回。"""
     mock_extract.side_effect = ValueError('DeepSeek API 返回空响应')
-    resp = client.post('/api/extract', json={'text': '测试'})
+    resp = client.post('/api/v1/extract', json={'text': '测试'})
     assert resp.status_code == 200  # SSE 流已建立
     events = _parse_sse(resp.text)
     assert len(events) == 1

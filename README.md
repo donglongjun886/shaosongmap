@@ -41,9 +41,8 @@
 ```bash
 git clone https://github.com/donglongjun886/shaosongmap.git
 cd shaosongmap
-python -m venv .venv
+uv sync
 source .venv/bin/activate
-pip install -r requirements.txt
 ```
 
 ### 配置
@@ -71,40 +70,53 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8765 --reload
 
 ```
 shaosongmap/
-├── app.py                  # FastAPI 应用入口，API 端点定义
-├── requirements.txt        # Python 依赖
+├── app.py                     # FastAPI 应用入口
+├── requirements.txt           # Python 生产依赖
+├── pyproject.toml             # 项目配置 + 开发依赖
 ├── shaosongmap/
-│   ├── extractor.py        # DeepSeek LLM 战役文本提取
-│   ├── geocoder.py         # CHGIS 精确匹配 + LLM 推断兜底
-│   ├── models.py           # Pydantic 数据模型
-│   └── ocr.py              # PaddleOCR 截图识别与文本清洗
+│   ├── config.py              # 配置中心 (pydantic-settings)
+│   ├── schemas.py             # Pydantic 请求/响应模型
+│   ├── models.py              # 领域数据模型
+│   ├── extractor.py           # DeepSeek LLM 战役文本提取
+│   ├── geocoder.py            # CHGIS 精确匹配 + LLM 推断兜底
+│   ├── ocr.py                 # PaddleOCR 截图识别与文本清洗
+│   ├── utils.py               # 工具函数
+│   ├── routers/               # 接口层
+│   │   ├── extract.py         # /api/v1/extract SSE 流式路由
+│   │   ├── ocr.py             # /api/v1/ocr 截图识别路由
+│   │   └── render.py          # /api/v1/render 重新渲染路由
+│   └── services/              # 业务层
+│       ├── pipeline.py        # 提取管道编排
+│       ├── geo.py             # 地理计算（方向角/距离/偏移）
+│       ├── geojson.py         # GeoJSON 构建
+│       └── unit_banner.py     # 部队旗帜标记
 ├── static/
-│   └── index.html          # 前端 SPA (Leaflet 地图 + 结果面板)
+│   └── index.html             # 前端 SPA (Leaflet 地图 + 结果面板)
 ├── scripts/
-│   └── build_chgis.py      # CHGIS v6 数据下载与预处理脚本
+│   └── build_chgis.py         # CHGIS v6 数据预处理
 ├── data/
 │   └── chgis_v6/
-│       └── chgis_v6_points.csv  # 934 条宋代地名数据
+│       └── chgis_v6_points.csv
 └── tests/
-    ├── test_api.py          # API 端点测试 (SSE)
-    ├── test_api_ocr.py      # OCR 端点测试
-    ├── test_api_render.py   # Render 端点测试
-    ├── test_api_sse.py      # SSE 事件格式测试
-    ├── test_extractor.py    # 提取器测试 (含对话/军事混合场景)
-    ├── test_geocoder.py     # 地名匹配测试
-    └── test_ocr.py          # OCR 清洗逻辑测试
+    ├── test_api.py
+    ├── test_api_ocr.py
+    ├── test_api_render.py
+    ├── test_api_sse.py
+    ├── test_extractor.py
+    ├── test_geocoder.py
+    └── test_ocr.py
 ```
 
 ## API 概览
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/ocr` | 上传截图 (PNG/JPEG)，返回 OCR 识别文本 |
-| POST | `/api/extract` | 提交战役文本，SSE 流式返回提取+匹配+地图数据 |
-| POST | `/api/render` | 提交编辑后的数据，重新地理编码和渲染 |
+| POST | `/api/v1/ocr` | 上传截图 (PNG/JPEG)，返回 OCR 识别文本 |
+| POST | `/api/v1/extract` | 提交战役文本，SSE 流式返回提取+匹配+地图数据 |
+| POST | `/api/v1/render` | 提交编辑后的数据，重新地理编码和渲染 |
 | GET | `/` | 静态前端界面 |
 
-### POST /api/ocr
+### POST /api/v1/ocr
 
 ```
 Content-Type: multipart/form-data
@@ -113,7 +125,7 @@ Body: file (PNG/JPEG, max 10MB)
 Response: { "text": "...", "raw_lines": 23 }
 ```
 
-### POST /api/extract
+### POST /api/v1/extract
 
 ```
 Content-Type: application/json
@@ -126,7 +138,7 @@ Response: text/event-stream (SSE)
   event: result   → { "features": [...], "routes": [...], "geojson": {...} }
 ```
 
-### POST /api/render
+### POST /api/v1/render
 
 ```
 Content-Type: application/json
@@ -139,10 +151,10 @@ Response: { "features": [...], "routes": [...], "geojson": {...} }
 
 ```bash
 # 运行测试
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # 运行特定测试
-pytest tests/ -k "geocode" -v
+uv run pytest tests/ -k "geocode" -v
 
 # 重新生成 CHGIS 数据（需要网络）
 python scripts/build_chgis.py

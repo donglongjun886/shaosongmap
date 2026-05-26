@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 
-from dotenv import load_dotenv
 from openai import OpenAI
-
-load_dotenv()
 
 from shaosongmap.models import CampaignExtract, CampaignTimeline
 
@@ -38,11 +34,11 @@ def _build_client() -> OpenAI:
 
     DeepSeek API 兼容 OpenAI SDK，通过 base_url 和 api_key 切换。
     """
-    api_key = os.getenv('DEEPSEEK_API_KEY', '')
-    base_url = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
-    if not api_key:
-        raise ValueError('请设置环境变量 DEEPSEEK_API_KEY')
-    return OpenAI(api_key=api_key, base_url=base_url)
+    from shaosongmap.config import settings
+
+    if settings is None:
+        raise RuntimeError('配置未初始化，请检查应用启动流程')
+    return OpenAI(api_key=settings.deepseek_api_key, base_url=settings.deepseek_base_url)
 
 
 # 军队编制后缀模式：地名后紧跟这些词时，该地名可能是军队编制的修饰语而非独立地理位置

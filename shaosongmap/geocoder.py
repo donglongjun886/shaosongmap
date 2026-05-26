@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from dotenv import load_dotenv
 from openai import OpenAI
-
-load_dotenv()
 
 from shaosongmap.models import GeoFeature, Place
 
@@ -164,12 +160,12 @@ def infer_with_llm(
     if not place_names:
         return []
 
-    api_key = os.getenv('DEEPSEEK_API_KEY', '')
-    base_url = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
-    if not api_key:
-        raise ValueError('请设置环境变量 DEEPSEEK_API_KEY')
+    from shaosongmap.config import settings
 
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    if settings is None:
+        raise RuntimeError('配置未初始化，请检查应用启动流程')
+
+    client = OpenAI(api_key=settings.deepseek_api_key, base_url=settings.deepseek_base_url)
     prompt = _INFER_PROMPT.format(
         context=context_text,
         places='\n'.join(f'- {p}' for p in place_names),

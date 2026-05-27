@@ -38,6 +38,23 @@ jobs:
       - name: Run tests with coverage
         run: DEEPSEEK_API_KEY=test-key PYTHONPATH=. uv run pytest tests/ -v --cov=shaosongmap --cov-fail-under=70
 
+  review:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.10"
+      - name: Run LLM Code Review
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_EVENT_AFTER: ${{ github.event.after }}
+        run: uv run python scripts/code_review.py
+
   audit:
     runs-on: ubuntu-latest
     continue-on-error: true

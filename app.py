@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from shaosongmap.config import limiter, settings
+from shaosongmap.config import Settings, limiter
 from shaosongmap.routers.extract import router as extract_router
 from shaosongmap.routers.health import router as health_router
 from shaosongmap.routers.ocr import router as ocr_router
@@ -117,11 +117,12 @@ async def _request_id_middleware(request: Request, call_next):
 
 _CSP_POLICY = (
     "default-src 'self'; "
-    "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
     "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; "
-    "connect-src 'self'; "
-    "font-src 'self' https://cdn.jsdelivr.net"
+    "connect-src 'self' https://unpkg.com; "
+    "font-src 'self' https://cdn.jsdelivr.net; "
+    "worker-src 'self' blob:"
 )
 
 
@@ -146,11 +147,12 @@ async def _http_exception_handler(_request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={'detail': exc.detail})
 
 
-# CORS 中间件：从配置读取允许域名
+# CORS 中间件：直接在模块加载时读取配置（pydantic-settings 已支持 .env）
+_cors_origins = Settings().cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins if settings else ['*'],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_origins != ['*'],
     allow_methods=['*'],
     allow_headers=['*'],
 )

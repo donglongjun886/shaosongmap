@@ -109,7 +109,9 @@ function clearBatch() {
 async function resizeImage(file, maxDim) {
   return new Promise((resolve) => {
     const img = new Image();
+    const url = URL.createObjectURL(file);
     img.onload = () => {
+      URL.revokeObjectURL(url);
       let { width, height } = img;
       if (width <= maxDim && height <= maxDim) { resolve(file); return; }
       const ratio = Math.min(maxDim / width, maxDim / height);
@@ -121,7 +123,8 @@ async function resizeImage(file, maxDim) {
       ctx.drawImage(img, 0, 0, width, height);
       canvas.toBlob((blob) => resolve(blob), file.type, 0.85);
     };
-    img.src = URL.createObjectURL(file);
+    img.onerror = function() { URL.revokeObjectURL(url); };
+    img.src = url;
   });
 }
 
@@ -134,15 +137,20 @@ async function startBatchOCR() {
   document.getElementById('batch-progress-fill').style.width = '0%';
   document.getElementById('batch-controls').classList.remove('active');
   document.querySelectorAll('.thumb-status').forEach(el => el.remove());
+  _abortPrevious();
+  const controller = new AbortController();
+  _activeAbortController = controller;
+
   try {
     const formData = new FormData();
     _imageBatch.forEach((item, i) => formData.append('files', item.blob, `screenshot_${i + 1}.png`));
-    const resp = await fetch('/api/v1/ocr/batch', { method: 'POST', body: formData });
+    const resp = await fetch('/api/v1/ocr/batch', { method: 'POST', body: formData, signal: controller.signal });
     if (!resp.ok) { const err = await resp.json(); const msg = err.error?.message || err.detail || '批量识别失败'; throw new Error(msg); }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     while (true) {
+      if (controller.signal.aborted) { console.log('[batchOCR] aborted'); return; }
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -159,9 +167,12 @@ async function startBatchOCR() {
       }
     }
   } catch (e) {
+    if (e.name === 'AbortError') return;
     showError(e.message || '批量识别失败，请重试');
     ocrProgress.classList.remove('active');
     document.getElementById('batch-controls').classList.add('active');
+  } finally {
+    _activeAbortController = null;
   }
 }
 
@@ -212,6 +223,14 @@ let totalSteps = 0;
 let _events = [];
 let _units = [];
 let _unitStates = [];
+let _activeAbortController = null;
+
+function _abortPrevious() {
+  if (_activeAbortController) {
+    _activeAbortController.abort();
+    _activeAbortController = null;
+  }
+}
 
 // ── 通用 error & 分阶段进度条 ──
 function showError(msg) {
@@ -256,16 +275,22 @@ async function analyze() {
   const dynasty = document.getElementById('dynasty-select').value;
   const mode = document.getElementById('mode-timeline').checked ? 'timeline' : 'static';
 
+  _abortPrevious();
+  const controller = new AbortController();
+  _activeAbortController = controller;
+
   try {
     const resp = await fetch('/api/v1/extract', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, dynasty: dynasty || null, mode: mode })
+      body: JSON.stringify({ text, dynasty: dynasty || null, mode: mode }),
+      signal: controller.signal
     });
     if (!resp.ok) { const err = await resp.json(); const msg = err.error?.message || err.detail || `请求失败 (${resp.status})`; throw new Error(msg); }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     while (true) {
+      if (controller.signal.aborted) { console.log('[analyze] aborted'); return; }
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -284,12 +309,14 @@ async function analyze() {
       }
     }
   } catch (e) {
+    if (e.name === 'AbortError') return;
     showError(e.message || '服务暂不可用，请稍后重试');
     STAGES.forEach(s => {
       const el = document.getElementById('stage-' + s);
       if (el.classList.contains('active')) setStageState(s, 'error');
     });
   } finally {
+    _activeAbortController = null;
     submitBtn.disabled = false;
   }
 }
@@ -317,7 +344,7 @@ function handleSSEEvent(type, data) {
     if (data.events && data.events.length > 0) {
       _events = data.events;
       totalSteps = data.total_steps || data.events.length;
-      currentStep = totalSteps;
+      currentStep = 1;
       _units = data.units || [];
       _unitStates = data.unit_states || [];
       renderTimeline();

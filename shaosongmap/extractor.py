@@ -107,6 +107,7 @@ def extract(text: str, model: str = 'deepseek-chat') -> CampaignExtract:
         ],
         temperature=0.1,
         response_format={'type': 'json_object'},
+        timeout=60.0,
     )
 
     raw = response.choices[0].message.content
@@ -275,6 +276,7 @@ def extract_timeline(text: str, model: str = 'deepseek-chat') -> CampaignTimelin
         ],
         temperature=0.1,
         response_format={'type': 'json_object'},
+        timeout=60.0,
     )
 
     raw = response.choices[0].message.content

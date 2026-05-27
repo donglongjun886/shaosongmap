@@ -141,7 +141,7 @@ def review(diff: str) -> str:
         )
         return response.choices[0].message.content or '（模型返回为空）'
     except Exception as exc:
-        return f'⚠️ 审查 API 调用失败: {exc}'
+        raise SystemExit(f'⚠️ 审查 API 调用失败: {exc}') from exc
 
 
 def main() -> None:

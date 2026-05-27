@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import time
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from PIL import Image, UnidentifiedImageError
 
 from shaosongmap.config import limiter
 from shaosongmap.ocr import merge_texts, ocr_main
@@ -20,6 +22,19 @@ router = APIRouter(prefix='/api/v1')
 _ALLOWED_IMAGE_TYPES = {'image/png', 'image/jpeg'}
 _MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 _MAX_BATCH_SIZE = 10
+
+
+def _validate_image(file: UploadFile, image_bytes: bytes, label: str = '') -> None:
+    """通过 PIL 解码验证图片真实性（Magic Bytes），防止 MIME type 伪造。"""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img.verify()
+    except (UnidentifiedImageError, Exception) as e:
+        prefix = f'{label}截图的' if label else ''
+        raise HTTPException(
+            status_code=400,
+            detail=_error_detail('INVALID_IMAGE', f'{prefix}文件不是有效的图片: {e}'),
+        ) from e
 
 
 def _error_detail(code: str, message: str, detail: str = '') -> dict:
@@ -42,6 +57,12 @@ async def ocr_image(file: UploadFile = File(...), request: Request = None):  # t
         )
 
     image_bytes = await file.read()
+    if len(image_bytes) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=_error_detail('EMPTY_FILE', '图片不能为空'),
+        )
+
     if len(image_bytes) > _MAX_IMAGE_SIZE:
         raise HTTPException(
             status_code=413,
@@ -50,11 +71,7 @@ async def ocr_image(file: UploadFile = File(...), request: Request = None):  # t
             ),
         )
 
-    if len(image_bytes) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail=_error_detail('EMPTY_FILE', '图片不能为空'),
-        )
+    _validate_image(file, image_bytes)
 
     try:
         t0 = time.perf_counter()
@@ -101,6 +118,11 @@ async def ocr_batch(files: list[UploadFile] = File(...), request: Request = None
                 ),
             )
         image_bytes = await file.read()
+        if len(image_bytes) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=_error_detail('EMPTY_FILE', f'{label}截图不能为空'),
+            )
         if len(image_bytes) > _MAX_IMAGE_SIZE:
             raise HTTPException(
                 status_code=413,
@@ -109,11 +131,7 @@ async def ocr_batch(files: list[UploadFile] = File(...), request: Request = None
                     f'{label}截图大小超过 {_MAX_IMAGE_SIZE // 1024 // 1024}MB 限制',
                 ),
             )
-        if len(image_bytes) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail=_error_detail('EMPTY_FILE', f'{label}截图不能为空'),
-            )
+        _validate_image(file, image_bytes, label)
         file_data.append((label, image_bytes))
 
     async def event_stream():
@@ -122,6 +140,9 @@ async def ocr_batch(files: list[UploadFile] = File(...), request: Request = None
         t_pipeline_start = time.perf_counter()
 
         for label, img_bytes in file_data:
+            if await request.is_disconnected():
+                logger.info('客户端断开连接，中止批量OCR')
+                return
             t0 = time.perf_counter()
             try:
                 text, _raw_lines = ocr_main(img_bytes)

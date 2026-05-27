@@ -102,7 +102,8 @@ map.on('load', () => {
   });
   map.addLayer({
     id: 'route-lines', type: 'line', source: 'routes',
-    paint: { 'line-color': '#c23b22', 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [6, 3], 'line-cap': 'butt' }
+    layout: { 'line-cap': 'butt' },
+    paint: { 'line-color': '#c23b22', 'line-width': 2.5, 'line-opacity': 0.7, 'line-dasharray': [6, 3] }
   });
   map.addLayer({
     id: 'route-arrows', type: 'symbol', source: 'routes',
@@ -226,7 +227,7 @@ function showPopup(e) {
   const coords = e.features[0].geometry.coordinates.slice();
   new maplibregl.Popup()
     .setLngLat(coords)
-    .setHTML(`<strong>${props.name}</strong><br>来源: ${sourceLabel}<br>${props.modern_name ? '今: ' + props.modern_name : ''}`)
+    .setHTML('<strong>' + escHtml(props.name) + '</strong><br>来源: ' + sourceLabel + '<br>' + (props.modern_name ? '今: ' + escHtml(props.modern_name) : ''))
     .addTo(map);
 }
 
@@ -322,7 +323,7 @@ function _applyComicRouteStyle(scale) {
   if (!map.getLayer('route-lines')) return;
   if (scale === 'tactical') {
     map.setPaintProperty('route-lines', 'line-width', 3.5);
-    map.setPaintProperty('route-lines', 'line-cap', 'round');
+    map.setLayoutProperty('route-lines', 'line-cap', 'round');
     map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [6, 3]]);
     if (map.getLayer('route-arrows')) {
       map.setLayoutProperty('route-arrows', 'icon-size', 0.96);
@@ -337,7 +338,7 @@ function _applyComicRouteStyle(scale) {
     }
   } else {
     map.setPaintProperty('route-lines', 'line-width', 2.5);
-    map.setPaintProperty('route-lines', 'line-cap', 'butt');
+    map.setLayoutProperty('route-lines', 'line-cap', 'butt');
     map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [6, 3]]);
     if (map.getLayer('route-arrows')) {
       map.setLayoutProperty('route-arrows', 'icon-size', 0.8);
@@ -560,7 +561,7 @@ function showUnitPopup(e) {
     .setHTML('<strong>' + escHtml(props.unit_name) + '</strong><br>' +
       '阵营: ' + escHtml(props.faction) + '<br>' +
       '状态: ' + statusLabel + '<br>' +
-      '方向: ' + (props.direction || '未明确') + '<br>' +
+      '方向: ' + escHtml(props.direction || '未明确') + '<br>' +
       (props.description ? '<small>' + escHtml(props.description) + '</small>' : ''))
     .addTo(map);
 }

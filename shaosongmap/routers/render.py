@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import cast
@@ -60,7 +61,8 @@ async def render_modified(request: RenderRequest):
         dyn_beg, dyn_end = _DYNASTY_YEARS[request.dynasty]
 
     try:
-        features = geocode(
+        features = await asyncio.to_thread(
+            geocode,
             campaign.places,
             context_text='',
             dynasty_beg_yr=dyn_beg,

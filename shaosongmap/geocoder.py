@@ -182,6 +182,7 @@ def infer_with_llm(
         messages=[{'role': 'user', 'content': prompt}],
         temperature=0.3,
         response_format={'type': 'json_object'},
+        timeout=60.0,
     )
 
     raw = response.choices[0].message.content

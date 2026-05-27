@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import threading
 import time
 
 import numpy as np
@@ -88,12 +89,15 @@ def _init_ocr():
 
 
 _ocr = None
+_ocr_lock = threading.Lock()
 
 
 def _get_ocr():
     global _ocr
     if _ocr is None:
-        _ocr = _init_ocr()
+        with _ocr_lock:
+            if _ocr is None:
+                _ocr = _init_ocr()
     return _ocr
 
 

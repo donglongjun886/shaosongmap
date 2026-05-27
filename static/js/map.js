@@ -193,6 +193,9 @@ if (map) map.on('load', () => {
   console.log('[map.onload] icons, sources, layers all registered');
 });
 
+  // zoom 变化时重新计算部队偏移
+  if (map) map.on('moveend', _onMapMoved);
+
 // ── 自定义城池/营寨图标 ──
 function _makeIconSVG(type, color, size) {
   const canvas = document.createElement('canvas');
@@ -458,6 +461,83 @@ function _renderComicUnitMarkers(unitBannerFeatures, scale) {
   map.on('mouseleave', 'comic-unit-icon', function() { map.getCanvas().style.cursor = ''; });
 }
 
+// ── 前端自适应部队偏移 ──
+let _rawBannerFeatures = null;
+let _rawDirectionFeatures = null;
+let _moveendTimer = null;
+
+function _applyUnitOffsets(bannerFeatures, directionFeatures, zoom) {
+  if (!bannerFeatures || bannerFeatures.length === 0) return;
+  // 1. 按真实坐标分组
+  var groups = {};
+  bannerFeatures.forEach(function(f, i) {
+    var c = f.geometry.coordinates;
+    var key = c[0].toFixed(6) + ',' + c[1].toFixed(6);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ idx: i, slot: (f.properties && f.properties._slot) || 0 });
+  });
+  // 2. 像素→度数转换
+  var sumLat = 0;
+  bannerFeatures.forEach(function(f) { sumLat += f.geometry.coordinates[1]; });
+  var midLat = sumLat / bannerFeatures.length;
+  var mPerPx = 156543 * Math.cos(midLat * Math.PI / 180) / Math.pow(2, zoom || 10);
+  var isComic = document.querySelector('.map-wrap').classList.contains('theme-comic');
+  var iconPx = isComic ? 84 : 26;
+  var spacingDeg = (iconPx * 1.3) * mPerPx / 111320;
+  // 3. 计算每个 feature 的偏移（按 unit_name+step 匹配）
+  var offsetMap = {};
+  Object.values(groups).forEach(function(group) {
+    group.sort(function(a, b) { return a.slot - b.slot; });
+    group.forEach(function(item) {
+      var f = bannerFeatures[item.idx];
+      var key = f.properties.unit_name + '@' + f.properties.step;
+      offsetMap[key] = [0, (item.slot + 1) * spacingDeg];
+    });
+  });
+  // 4. 应用到 banner features
+  bannerFeatures.forEach(function(f) {
+    var key = f.properties.unit_name + '@' + f.properties.step;
+    var off = offsetMap[key];
+    if (off) { f.geometry.coordinates[0] += off[0]; f.geometry.coordinates[1] += off[1]; }
+  });
+  // 5. 应用到 direction features
+  directionFeatures.forEach(function(f) {
+    var key = f.properties.unit_name + '@' + f.properties.step;
+    var off = offsetMap[key];
+    if (off && f.geometry.coordinates) {
+      for (var i = 0; i < f.geometry.coordinates.length; i++) {
+        f.geometry.coordinates[i][0] += off[0];
+        f.geometry.coordinates[i][1] += off[1];
+      }
+    }
+  });
+}
+
+function _onMapMoved() {
+  if (!_rawBannerFeatures) return;
+  clearTimeout(_moveendTimer);
+  _moveendTimer = setTimeout(function() {
+    var banners = _rawBannerFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
+    var dirs = _rawDirectionFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
+    _applyUnitOffsets(banners, dirs, map.getZoom());
+    map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: banners });
+    map.getSource('unit-directions').setData({ type: 'FeatureCollection', features: dirs });
+    if (map.getSource('comic-unit-icons')) {
+      var comicFeatures = banners.map(function(f) {
+        var props = f.properties || {};
+        var faction = props.faction || '';
+        var status = props.status || '';
+        var iconKey = status === 'engaging' ? 'comic-engaging' :
+          (faction.indexOf('宋') >= 0 ? 'comic-song' :
+           faction.indexOf('金') >= 0 ? 'comic-jin' : 'comic-unknown');
+        return { type: 'Feature', geometry: f.geometry,
+          properties: Object.assign({}, props, { _icon_key: iconKey }) };
+      });
+      map.getSource('comic-unit-icons').setData({ type: 'FeatureCollection', features: comicFeatures });
+    }
+  }, 100);
+}
+
 function updateMap(data) {
   if (!map) { console.warn('[updateMap] map not initialized, skipping'); return; }
   try {
@@ -473,6 +553,13 @@ function updateMap(data) {
     f.properties?._feature_type === 'unit_direction');
   console.log('[updateMap] places:', placeFeatures.length, 'routes:', routeFeatures.length,
     'banners:', unitBannerFeatures.length, 'directions:', unitDirectionFeatures.length);
+
+  // 保存原始坐标（用于 zoom 变化时重新计算偏移）
+  _rawBannerFeatures = unitBannerFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
+  _rawDirectionFeatures = unitDirectionFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
+  // 应用当前 zoom 级别的像素偏移
+  _applyUnitOffsets(unitBannerFeatures, unitDirectionFeatures, map.getZoom());
+
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
   map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: unitBannerFeatures });

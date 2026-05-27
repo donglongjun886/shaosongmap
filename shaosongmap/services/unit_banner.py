@@ -100,33 +100,27 @@ def compute_unit_offsets(
             if us.unit_name not in coord_units[coord]:
                 coord_units[coord].append(us.unit_name)
 
-    # 旗帜间距估算
-    scale_ratio_w = {'tactical': 0.10, 'battle': 0.08, 'strategic': 0.03}
-    ratio_w = scale_ratio_w.get(scale or '', 0.08)
-    lngs = [c[0] for c in coord_map.values() if c[0] is not None]
+    # 同坐标多部队错位展开：按预期 zoom 级别计算像素间距 → 换算为米 → 经纬度偏移
+    import math as _m
+
     lats = [c[1] for c in coord_map.values() if c[1] is not None]
-    if len(lngs) >= 2:
-        import math as _m
+    mid_lat = _m.radians(sum(lats) / len(lats)) if lats else _m.radians(35)
 
-        mid_lat = _m.radians((min(lats) + max(lats)) / 2)
-        dx = (max(lngs) - min(lngs)) * 111320.0 * _m.cos(mid_lat)
-        dy = (max(lats) - min(lats)) * 111320.0
-        diag = _m.sqrt(dx * dx + dy * dy)
-    else:
-        diag = 100.0
-    body_width_est = max(diag * ratio_w / 3.5, 22.0)
-    arrow_spacing_m = body_width_est * 1.2
+    # 各尺度下期望的图标像素间距（确保肉眼可分辨）
+    _ZOOM_PX = {'tactical': (14, 65), 'battle': (10, 50), 'strategic': (6, 40)}
+    zoom, target_px = _ZOOM_PX.get(scale or '', (10, 50))
+    m_per_px = 156543.0 * _m.cos(mid_lat) / (2**zoom)
+    spacing_m = target_px * m_per_px  # 理想像素间距换算为实际米数
 
+    deg_per_m_lat = 1.0 / 111320.0
     offsets: dict[str, list[float]] = {}
     for _coord, unit_names in coord_units.items():
         if len(unit_names) <= 1:
             continue
-        deg_per_m_lat = 1.0 / 111320.0
-
         for i, uname in enumerate(unit_names):
-            # 统一沿南北方向错位展开，以中心为基准向两侧分布
-            offset_idx = (i - (len(unit_names) - 1) / 2) * 1.2
-            offset_m = offset_idx * arrow_spacing_m
+            # 沿南北方向错位，以中心为基准向两侧分布
+            offset_idx = i - (len(unit_names) - 1) / 2
+            offset_m = offset_idx * spacing_m
             offsets[uname] = [0.0, offset_m * deg_per_m_lat]
 
     return offsets

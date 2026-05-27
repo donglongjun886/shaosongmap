@@ -10,8 +10,6 @@ import time
 import numpy as np
 from PIL import Image
 
-from shaosongmap.metrics import ocr_duration_seconds, ocr_errors_total
-
 logger = logging.getLogger(__name__)
 
 _UI_KEYWORDS = {
@@ -210,7 +208,6 @@ def recognize(image_bytes: bytes) -> list[str]:
     t0 = time.perf_counter()
     results = ocr.predict(image_np)
     elapsed = time.perf_counter() - t0
-    ocr_duration_seconds.observe(elapsed)
     logger.info('OCR 识别完成, 耗时 %.2fs', elapsed)
     if not results or not results[0]:
         return []
@@ -317,13 +314,11 @@ def ocr_main(image_bytes: bytes) -> tuple[str, int]:
     raw_lines = recognize(image_bytes)
 
     if not raw_lines:
-        ocr_errors_total.inc()
         raise ValueError('未能识别到任何文字，请检查截图是否清晰')
 
     text = _clean_text(raw_lines)
 
     if len(text) < _MIN_TEXT_LENGTH:
-        ocr_errors_total.inc()
         raise ValueError(
             f'未能从截图中提取到足够的文本（仅 {len(text)} 字符），请确保截图包含正文内容'
         )

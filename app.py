@@ -4,24 +4,18 @@ from __future__ import annotations
 
 import contextvars
 import logging
-import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from shaosongmap.config import limiter, settings
-from shaosongmap.metrics import (
-    get_metrics,
-    http_request_duration_seconds,
-    http_requests_total,
-)
 from shaosongmap.routers.extract import router as extract_router
 from shaosongmap.routers.health import router as health_router
 from shaosongmap.routers.ocr import router as ocr_router
@@ -121,20 +115,6 @@ async def _request_id_middleware(request: Request, call_next):
     return response
 
 
-@app.middleware('http')
-async def _metrics_middleware(request: Request, call_next):
-    """自动记录 HTTP 请求延迟和状态码指标。"""
-    start = time.perf_counter()
-    response = await call_next(request)
-    elapsed = time.perf_counter() - start
-    endpoint = request.url.path
-    http_requests_total.labels(
-        method=request.method, endpoint=endpoint, status=str(response.status_code)
-    ).inc()
-    http_request_duration_seconds.labels(method=request.method, endpoint=endpoint).observe(elapsed)
-    return response
-
-
 _CSP_POLICY = (
     "default-src 'self'; "
     "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; "
@@ -179,12 +159,6 @@ app.include_router(extract_router)
 app.include_router(health_router)
 app.include_router(ocr_router)
 app.include_router(render_router)
-
-
-@app.get('/metrics')
-async def _metrics_endpoint():
-    """Prometheus 格式指标端点。"""
-    return PlainTextResponse(content=get_metrics(), media_type='text/plain; version=0.0.4')
 
 
 # 挂载静态文件（必须在所有路由之后）

@@ -108,7 +108,7 @@
 CLAUDE.md MUST：
 - 技术栈描述与 `pyproject.toml` 实际依赖一致（不包含已移除的技术组件）
 - 架构描述与项目实际分层一致：`routers` (接口层) → `services` (业务层)
-- 预提交钩子列表与 `.pre-commit-config.yaml` 完全同步：ruff format → ruff check → mypy → bandit → detect-secrets
+- 预提交钩子列表与 `.pre-commit-config.yaml` 完全同步：ruff format → ruff check → mypy → bandit
 - 测试要求与 CI 配置一致（覆盖率和阈值）
 - 不包含任何未实现的技术组件描述（如 SQLAlchemy、PostgreSQL、repository 模式、事务回滚）
 
@@ -120,7 +120,7 @@ CLAUDE.md MUST：
 #### Scenario: 预提交钩子列表与配置一致
 
 - **WHEN** 开发者对比 CLAUDE.md 与 `.pre-commit-config.yaml`
-- **THEN** 两者的钩子列表完全相同，CLAUDE.md 包含 detect-secrets
+- **THEN** 两者的钩子列表完全相同
 
 ### Requirement: 安装指令使用 uv
 

@@ -15,7 +15,7 @@
 - 静态类型: mypy（宽松起步，逐步收紧）
 - 测试: pytest + pytest-cov（覆盖率阈值 70%）
 - 安全扫描: bandit
-- 预提交: pre-commit 钩子链（ruff format → ruff check → mypy → bandit → detect-secrets）
+- 预提交: pre-commit 钩子链（ruff format → ruff check → mypy → bandit）
 
 ## 2. 代码风格与架构
 - 严格遵循 PEP8 和 PEP 257 规范。

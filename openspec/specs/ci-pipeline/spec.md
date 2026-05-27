@@ -6,9 +6,8 @@
 
 工作流 MUST：
 - 触发条件：push 到 main 分支、pull request 到 main 分支
-- 运行环境：ubuntu-latest
+- 运行环境：ubuntu-latest, Python 3.10
 - 使用 uv 安装依赖（`uv sync --group dev`）
-- 使用 Python 版本矩阵 3.10 / 3.11 / 3.12 并行执行 lint、type-check、test 阶段
 - 按顺序执行五个阶段：
 
 **Stage 1 - Lint：**
@@ -51,15 +50,10 @@
 - **WHEN** 开发者提交包含 `shell=True` 的 subprocess 调用
 - **THEN** CI 在 Stage 4 标记为失败，报告漏洞类型和文件位置
 
-#### Scenario: Python 版本矩阵并行执行
-
-- **WHEN** 开发者提交 PR
-- **THEN** lint / type-check / test 作业在 Python 3.10、3.11、3.12 三个版本上并行执行，任一版本失败则整体失败
-
 #### Scenario: mypy 类型错误阻塞 PR
 
 - **WHEN** 开发者提交包含类型错误的代码
-- **THEN** CI Stage 2 在对应 Python 版本上失败并阻止合并，不再被静默跳过
+- **THEN** CI Stage 2 失败并阻止合并，不再被静默跳过
 
 #### Scenario: pip-audit 发现 CVE
 

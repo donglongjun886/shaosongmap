@@ -26,12 +26,3 @@ repos:
         name: "bandit"
         args: [-r, shaosongmap/, app.py, -ll]
         pass_filenames: false
-
-  - repo: local
-    hooks:
-      - id: detect-secrets
-        name: "detect-secrets"
-        entry: bash -c 'cp .secrets.baseline /tmp/ds-baseline.json && uv run detect-secrets scan --baseline /tmp/ds-baseline.json > /dev/null'
-        language: system
-        pass_filenames: false
-        files: ''

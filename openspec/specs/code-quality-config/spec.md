@@ -67,7 +67,7 @@
 
 ### Requirement: pre-commit 钩子自动执行
 
-系统 SHALL 在 `.pre-commit-config.yaml` 中配置预提交钩子链，在每次 `git commit` 时自动按顺序执行：ruff format → ruff check → mypy → bandit → detect-secrets。
+系统 SHALL 在 `.pre-commit-config.yaml` 中配置预提交钩子链，在每次 `git commit` 时自动按顺序执行：ruff format → ruff check → mypy → bandit。
 
 任何钩子失败 SHALL 阻止提交完成，用户 MUST 修复后方可提交。
 

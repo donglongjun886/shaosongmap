@@ -34,7 +34,7 @@
 ### 环境要求
 
 - Python 3.10+
-- pip
+- [uv](https://docs.astral.sh/uv/)（推荐）或 pip
 
 ### 安装
 
@@ -43,6 +43,13 @@ git clone https://github.com/donglongjun886/shaosongmap.git
 cd shaosongmap
 uv sync
 source .venv/bin/activate
+```
+
+习惯用 pip？执行以下命令自行生成 requirements.txt：
+
+```bash
+uv export --format requirements-txt --no-hashes --no-dev -o requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 配置
@@ -71,7 +78,6 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8765 --reload
 ```
 shaosongmap/
 ├── app.py                     # FastAPI 应用入口
-├── requirements.txt           # Python 生产依赖
 ├── pyproject.toml             # 项目配置 + 开发依赖
 ├── shaosongmap/
 │   ├── config.py              # 配置中心 (pydantic-settings)

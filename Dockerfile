@@ -17,8 +17,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /app
 
 # 先安装依赖（利用 Docker 缓存层）
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir uv && uv sync --no-dev --frozen
 
 # 复制源码
 COPY . .

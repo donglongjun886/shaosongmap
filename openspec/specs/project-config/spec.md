@@ -108,7 +108,7 @@
 CLAUDE.md MUST：
 - 技术栈描述与 `pyproject.toml` 实际依赖一致（不包含已移除的技术组件）
 - 架构描述与项目实际分层一致：`routers` (接口层) → `services` (业务层)
-- 预提交钩子列表与 `.pre-commit-config.yaml` 完全同步：ruff format → ruff check → mypy → bandit
+- 预提交钩子列表与 `.pre-commit-config.yaml` 完全同步：ruff format → ruff check → mypy
 - 测试要求与 CI 配置一致（覆盖率和阈值）
 - 不包含任何未实现的技术组件描述（如 SQLAlchemy、PostgreSQL、repository 模式、事务回滚）
 
@@ -124,12 +124,12 @@ CLAUDE.md MUST：
 
 ### Requirement: 安装指令使用 uv
 
-项目的安装指南 SHALL 使用 `uv sync` 作为依赖管理命令，替换 `pip install -r requirements.txt`。
+项目的安装指南 SHALL 使用 `uv sync` 作为依赖管理命令，不推荐直接使用 `pip install -r requirements.txt`。
 
 README.md 的安装步骤 MUST：
 - 使用 `uv sync` 安装项目依赖
-- 使用 `.venv/bin/activate` 或 `uv run` 激活虚拟环境
-- 不再引用 `requirements.txt`（可保留文件但标记为过时）
+- 提供 `uv export --format requirements-txt --no-hashes --no-dev -o requirements.txt` 作为 pip 用户的过渡方案
+- 项目不提交 `requirements.txt` 文件
 
 #### Scenario: 新贡献者按 README 安装
 

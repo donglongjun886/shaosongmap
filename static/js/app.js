@@ -361,6 +361,7 @@ function handleSSEEvent(type, data) {
     renderEditableResult(data);
     switchToViewMode();
     updateMap(data);
+    applyTimelineFilters();
   }
 }
 

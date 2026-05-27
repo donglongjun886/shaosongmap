@@ -426,7 +426,7 @@ function _renderComicUnitMarkers(unitBannerFeatures, scale) {
     id: 'comic-unit-label', type: 'symbol', source: 'comic-unit-icons',
     layout: {
       'text-field': ['get', 'unit_name'],
-      'text-offset': [0, 0],
+      'text-offset': [0, -1.8],
       'text-size': ['step', ['zoom'], 10, 8, 12, 12, 14],
       'text-anchor': 'center',
       'text-allow-overlap': true,

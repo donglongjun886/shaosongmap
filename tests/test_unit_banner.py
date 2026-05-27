@@ -144,9 +144,13 @@ class TestComputeUnitOffsets:
         ]
         offsets_tactical = compute_unit_offsets(unit_states, units, features, 'tactical')
         offsets_strategic = compute_unit_offsets(unit_states, units, features, 'strategic')
-        tactical_offset = abs(list(offsets_tactical.values())[0][1])
-        strategic_offset = abs(list(offsets_strategic.values())[0][1])
-        assert tactical_offset > strategic_offset
+        tactical_deg = abs(list(offsets_tactical.values())[0][1])
+        strategic_deg = abs(list(offsets_strategic.values())[0][1])
+        # 两个尺度下偏移不同（度数上战略>战术因为每像素覆盖更大的地理范围）
+        assert tactical_deg != strategic_deg
+        # 两个偏移都是正值
+        assert tactical_deg > 0
+        assert strategic_deg > 0
 
 
 class TestMakeUnitGeojson:

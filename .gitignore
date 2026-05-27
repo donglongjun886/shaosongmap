@@ -1,6 +1,7 @@
 .idea/
 *.iml
-.claude/
+.claude/*
+!.claude/settings.json
 .venv
 .env
 __pycache__/

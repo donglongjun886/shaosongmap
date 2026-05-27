@@ -106,8 +106,9 @@ def compute_unit_offsets(
     lats = [c[1] for c in coord_map.values() if c[1] is not None]
     mid_lat = _m.radians(sum(lats) / len(lats)) if lats else _m.radians(35)
 
-    # 各尺度下期望的图标像素间距（确保肉眼可分辨）
-    _ZOOM_PX = {'tactical': (14, 65), 'battle': (10, 50), 'strategic': (6, 40)}
+    # 各尺度下期望的图标像素间距（需大于 comic 图标渲染尺寸：
+    # tactical: 120px * 0.7 = 84px → 间距 110px；battle: 32px * 0.55 = 18px → 间距 55px）
+    _ZOOM_PX = {'tactical': (14, 110), 'battle': (10, 55), 'strategic': (6, 45)}
     zoom, target_px = _ZOOM_PX.get(scale or '', (10, 50))
     m_per_px = 156543.0 * _m.cos(mid_lat) / (2**zoom)
     spacing_m = target_px * m_per_px  # 理想像素间距换算为实际米数

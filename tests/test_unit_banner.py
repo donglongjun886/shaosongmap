@@ -74,12 +74,14 @@ class TestMakeUnitBannerFeatures:
 
 
 class TestComputeUnitOffsets:
-    def test_single_unit_no_offset(self):
+    def test_single_unit_gets_north_offset(self):
         unit_states = [UnitState(seq=1, unit_name='中军', status='deploying', location='汴京')]
         units = [ForceUnit(name='中军', faction='宋军')]
         features = [GeoFeature(name='汴京', lng=114.0, lat=34.0)]
         offsets = compute_unit_offsets(unit_states, units, features, 'battle')
-        assert offsets == {}  # 单部队无需偏移
+        assert len(offsets) == 1
+        assert offsets['中军'][0] == 0.0  # lng 偏移为 0
+        assert offsets['中军'][1] > 0  # 单部队也在地点北侧
 
     def test_multiple_units_same_location_get_offsets(self):
         unit_states = [
@@ -95,14 +97,16 @@ class TestComputeUnitOffsets:
         features = [GeoFeature(name='汴京', lng=114.0, lat=34.0)]
         offsets = compute_unit_offsets(unit_states, units, features, 'battle')
         assert len(offsets) == 3
-        # 偏移是南北方向，经度偏移为 0；中间部队 lat 偏移为 0
+        # 所有部队位于地点北侧，经度偏移为 0
         for _uname, offset in offsets.items():
-            assert offset[0] == 0.0  # lng offset is 0 (north-south only)
-        # 非居中的部队有非零 lat 偏移
-        lat_offsets = [abs(o[1]) for o in offsets.values() if abs(o[1]) > 0]
-        assert len(lat_offsets) >= 2
+            assert offset[0] == 0.0
+        # 所有部队都有正北偏移（由南到北逐级递增）
+        lat_offsets = [o[1] for o in offsets.values()]
+        assert all(lat > 0 for lat in lat_offsets)
+        # 偏移值各不相同（逐级展开）
+        assert len(set(lat_offsets)) == 3
 
-    def test_units_at_different_locations_no_offsets(self):
+    def test_units_at_different_locations_each_get_offset(self):
         unit_states = [
             UnitState(seq=1, unit_name='左军', status='deploying', location='汴京'),
             UnitState(seq=1, unit_name='右军', status='deploying', location='襄阳'),
@@ -116,7 +120,11 @@ class TestComputeUnitOffsets:
             GeoFeature(name='襄阳', lng=112.0, lat=32.0),
         ]
         offsets = compute_unit_offsets(unit_states, units, features, 'battle')
-        assert offsets == {}
+        # 两个部队各自在地点北侧，都有偏移
+        assert len(offsets) == 2
+        for _uname, offset in offsets.items():
+            assert offset[0] == 0.0
+            assert offset[1] > 0
 
     def test_missing_location_ignored(self):
         unit_states = [

@@ -75,10 +75,10 @@ def compute_unit_offsets(
     features: list[GeoFeature],
     scale: str | None,
 ) -> dict[str, list[float]]:
-    """计算同名地多部队的平行错位偏移。
+    """计算部队在地点北侧的错位偏移。
 
-    同一地点有多个部队时，统一沿南北方向做平行错位展开，
-    避免各部队方向角不同导致偏移方向不一致而重叠。
+    所有部队统一放置在地点北侧，按列展开（由南到北排列），
+    避免部队图标与地点图标重叠。多部队时逐级向北递增。
 
     Returns:
         映射: unit_name → [offset_lng, offset_lat]
@@ -100,7 +100,7 @@ def compute_unit_offsets(
             if us.unit_name not in coord_units[coord]:
                 coord_units[coord].append(us.unit_name)
 
-    # 同坐标多部队错位展开：按预期 zoom 级别计算像素间距 → 换算为米 → 经纬度偏移
+    # 按预期 zoom 级别计算像素间距 → 换算为米 → 经纬度偏移
     import math as _m
 
     lats = [c[1] for c in coord_map.values() if c[1] is not None]
@@ -115,12 +115,9 @@ def compute_unit_offsets(
     deg_per_m_lat = 1.0 / 111320.0
     offsets: dict[str, list[float]] = {}
     for _coord, unit_names in coord_units.items():
-        if len(unit_names) <= 1:
-            continue
         for i, uname in enumerate(unit_names):
-            # 沿南北方向错位，以中心为基准向两侧分布
-            offset_idx = i - (len(unit_names) - 1) / 2
-            offset_m = offset_idx * spacing_m
+            # 所有部队位于地点北侧，由南到北逐级排列
+            offset_m = (i + 1) * spacing_m
             offsets[uname] = [0.0, offset_m * deg_per_m_lat]
 
     return offsets

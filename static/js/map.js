@@ -1,18 +1,25 @@
 // ShaosongMap 地图渲染核心
 // 依赖：maplibre-gl（CDN）、utils.js（纯函数）
 
-// ── 地图初始化 ──
-const map = new maplibregl.Map({
-  container: 'map',
-  style: {
-    version: 8,
-    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-    sources: {},
-    layers: []
-  },
-  center: [112, 33],
-  zoom: 5
-});
+// ── 地图初始化（防御 CDN 加载失败） ──
+let map = null;
+try {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      sources: {},
+      layers: []
+    },
+    center: [112, 33],
+    zoom: 5
+  });
+} catch (e) {
+  console.error('[map] 地图初始化失败，请检查网络或 CDN 连通性:', e.message);
+  var _mapEl = document.getElementById('map');
+  if (_mapEl) _mapEl.innerHTML = '<div style="padding:40px;text-align:center;color:#c23b22;">地图库加载失败，请刷新页面或检查网络连接</div>';
+}
 
 // ── 底图 Provider 架构 ──
 const BASEMAP = {
@@ -55,7 +62,7 @@ function applyBasemap(name) {
   });
 }
 
-map.on('load', () => {
+if (map) map.on('load', () => {
   console.log('[map.onload] map loaded, applying basemap and registering icons');
   applyBasemap('schematic');
 
@@ -452,6 +459,7 @@ function _renderComicUnitMarkers(unitBannerFeatures, scale) {
 }
 
 function updateMap(data) {
+  if (!map) { console.warn('[updateMap] map not initialized, skipping'); return; }
   try {
   console.log('[updateMap] called, geojson features:', data.geojson?.features?.length, 'scale:', data.scale);
   const geojsonFeatures = data.geojson.features || [];
@@ -507,13 +515,16 @@ function updateMap(data) {
 }
 
 function _safeFilter(layerId, filter) {
+  if (!map) return;
   if (map.getLayer(layerId)) { map.setFilter(layerId, filter); }
 }
 function _safeLayout(layerId, prop, val) {
+  if (!map) return;
   if (map.getLayer(layerId)) { map.setLayoutProperty(layerId, prop, val); }
 }
 
 function applyTimelineFilters() {
+  if (!map) { console.warn('[applyTimelineFilters] map not initialized, skipping'); return; }
   if (totalSteps === 0) {
     map.setFilter('places-chgis', null);
     map.setFilter('places-llm', null);
@@ -544,7 +555,7 @@ function applyTimelineFilters() {
 }
 
 // ── 图层切换 ──
-function toggleLayer(layerId, visible) { map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none'); }
+function toggleLayer(layerId, visible) { if (!map) return; map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none'); }
 
 function toggleUnitLayers(visible) {
   var v = visible ? 'visible' : 'none';

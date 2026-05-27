@@ -26,12 +26,31 @@ _TEST_TEXT = (
 )
 
 
-def _screenshot(url: str, text: str, output: str) -> None:
+def _screenshot(url: str, text: str, output: str) -> tuple[list[str], list[str]]:
+    """截图并返回 (errors, warnings) 列表。"""
     from playwright.sync_api import sync_playwright
+
+    errors: list[str] = []
+    warnings: list[str] = []
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={'width': 1400, 'height': 900})
+
+        # 收集控制台错误和警告
+        page.on(
+            'console',
+            lambda msg: (
+                errors.append(f'[console.{msg.type}] {msg.text}')
+                if msg.type == 'error'
+                else warnings.append(f'[console.{msg.type}] {msg.text}')
+                if msg.type == 'warning'
+                else None
+            ),
+        )
+        # 收集未捕获的 JS 异常
+        page.on('pageerror', lambda err: errors.append(f'[pageerror] {err}'))
+
         page.goto(url, wait_until='networkidle')
         print(f'→ 页面加载完成: {url}')
 
@@ -56,6 +75,8 @@ def _screenshot(url: str, text: str, output: str) -> None:
         print(f'→ 截图已保存: {output}')
         browser.close()
 
+    return errors, warnings
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='前端自测工具')
@@ -67,10 +88,23 @@ def main() -> None:
         screenshot_path = f.name
 
     try:
-        _screenshot(args.url, args.text, screenshot_path)
+        errors, warnings = _screenshot(args.url, args.text, screenshot_path)
     except Exception as e:
         print(f'❌ 截图失败: {e}')
         sys.exit(1)
+
+    # 输出控制台错误和警告
+    if errors:
+        print(f'\n⚠️  浏览器控制台错误 ({len(errors)} 条):')
+        for err in errors:
+            print(f'   {err[:200]}')
+    else:
+        print('\n✅ 浏览器控制台无错误')
+
+    if warnings:
+        print(f'\n🔶 浏览器控制台警告 ({len(warnings)} 条):')
+        for w in warnings[:10]:
+            print(f'   {w[:200]}')
 
     # 调用 describe.py 描述截图
     describe_script = _THIS_DIR / 'describe.py'

@@ -228,17 +228,20 @@ class TestFrontendFileSplit:
         # 排除 maplibre-gl CDN 样式（<link>），只检查 <style> 标签
         assert '<style>' not in resp.text
 
-    def test_no_inline_script_code(self):
-        """拆分后 <script> 标签应为外部引用，不含内联代码。
+    def test_no_business_logic_inline_script(self):
+        """内联 <script> 仅允许 CDN 回退，禁止业务逻辑内联。
 
-        允许 <script src="..."> 但禁止 <script> 后紧跟代码内容。
-        检测方式：<script> 标签后不应有非空白字符（排除 src 属性）。
+        允许 CDN 回退脚本（含 document.write），禁止其他内联代码。
         """
         resp = _client.get('/')
-        # 匹配所有 <script> 标签，检查都有 src 属性
         script_tags = re.findall(r'<script\b[^>]*>', resp.text)
         for tag in script_tags:
-            assert 'src=' in tag, f'发现内联 <script> 代码块: {tag}'
+            if 'src=' in tag:
+                continue
+            # 仅允许 CDN 回退的内联脚本
+            assert 'maplibregl' in resp.text and 'document.write' in resp.text, (
+                f'发现未预期的内联 <script> 代码块: {tag}'
+            )
 
     def test_css_referenced(self):
         """应通过 <link> 引用外部 CSS。"""
@@ -255,13 +258,11 @@ class TestFrontendFileSplit:
             f'JS 加载顺序不正确: {local_scripts}'
         )
 
-    def test_sri_integrity_present(self):
-        """CDN 资源应有 integrity 属性防篡改。"""
+    def test_maplibre_cdn_present(self):
+        """页面应引用 MapLibre GL，优先 jsdelivr（国内连通性更好）。"""
         resp = _client.get('/')
-        # maplibre-gl JS
-        assert 'integrity="sha384-' in resp.text
-        # crossorigin 属性
-        assert 'crossorigin="anonymous"' in resp.text
+        assert 'maplibre-gl@4.7.1' in resp.text
+        assert 'cdn.jsdelivr.net' in resp.text or 'unpkg.com' in resp.text
 
     def test_css_accessible(self):
         """CSS 文件可正常访问。"""

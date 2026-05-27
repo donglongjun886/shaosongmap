@@ -1,5 +1,28 @@
 ## Requirements
 
+### Requirement: 启动时配置完整性校验
+
+系统 SHALL 在应用启动时通过 pydantic-settings 对所有必需配置项进行校验，缺失必填项时拒绝启动。
+
+配置模型 MUST 包含 DEEPSEEK_API_KEY（必填）、DEEPSEEK_BASE_URL、DASHSCOPE_API_KEY、CORS_ORIGINS、LOG_LEVEL、LOG_FORMAT 等字段，加载优先级为环境变量 > `.env` 文件 > 硬编码默认值。
+
+`.env.example` 文件 SHALL 包含上述所有字段，按类别分组并附中文注释，新贡献者复制为 `.env` 并填入必填项即可启动。
+
+#### Scenario: 必需配置缺失时拒绝启动
+
+- **WHEN** 未设置 `DEEPSEEK_API_KEY` 环境变量且 `.env` 文件无此配置
+- **THEN** 应用启动失败，输出明确错误信息
+
+#### Scenario: 配置完整时正常启动
+
+- **WHEN** `DEEPSEEK_API_KEY` 已在 `.env` 文件中正确配置
+- **THEN** 应用正常启动，`app.state.settings` 可访问完整配置对象
+
+#### Scenario: 模块从 config 单例读取配置
+
+- **WHEN** `extractor.py` 需要 DeepSeek API key
+- **THEN** 从 `shaosongmap.config.settings` 单例读取，而非在函数内调用 `os.getenv`
+
 ### Requirement: pyproject.toml 项目配置
 
 系统 SHALL 在项目根目录提供 `pyproject.toml` 文件，包含项目元数据、依赖管理和工具链配置。

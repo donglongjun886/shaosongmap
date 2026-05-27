@@ -64,3 +64,24 @@
 
 - **WHEN** CI 中测试覆盖率低于 70%
 - **THEN** CI 工作流标记为失败，阻止合并
+
+### Requirement: pre-commit 钩子自动执行
+
+系统 SHALL 在 `.pre-commit-config.yaml` 中配置预提交钩子链，在每次 `git commit` 时自动按顺序执行：ruff format → ruff check → mypy → bandit → detect-secrets。
+
+任何钩子失败 SHALL 阻止提交完成，用户 MUST 修复后方可提交。
+
+#### Scenario: 提交包含格式问题的代码
+
+- **WHEN** 用户 `git commit` 包含不符合 ruff 格式规范的代码
+- **THEN** ruff format 自动修正格式，提交继续执行后续检查
+
+#### Scenario: 提交包含类型错误的代码
+
+- **WHEN** 用户提交包含 mypy 检测到的类型不一致
+- **THEN** 钩子报告错误并阻止提交，提示用户修复
+
+#### Scenario: 新开发者初始化钩子
+
+- **WHEN** 新开发者 clone 项目后运行 `pre-commit install`
+- **THEN** 所有钩子自动安装，后续每次 commit 自动触发

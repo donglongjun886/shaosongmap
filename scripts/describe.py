@@ -20,7 +20,7 @@ from openai import OpenAI
 load_dotenv()
 
 BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-MODEL = 'qwen-vl-plus'
+MODEL = 'qwen-vl-max'
 
 DEFAULT_PROMPT = '请客观描述这张截图的内容。包括：页面整体布局、有哪些 UI 元素、文字内容、颜色、以及任何明显的视觉问题（如元素重叠、文字截断、错位、报错信息等）。'
 

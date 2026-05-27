@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""LLM Code Review — 用 Qwen3.7-Max（思考模式）审查 git diff，输出评审意见。"""
+"""LLM Code Review — 用 DeepSeek-reasoner (R1) 审查 git diff，输出评审意见。
+
+可独立运行（git hook / CLI），也可被 MCP Server 通过 subprocess 调用。
+"""
 
 from __future__ import annotations
 
+import argparse
+import json
 import logging
 import os
 import subprocess
@@ -112,17 +117,17 @@ def _build_review_messages(diff: str) -> list[dict]:
 
 
 def review(diff: str) -> str:
-    """调用 Qwen3.7-Max（思考模式）审查 diff。"""
+    """调用 DeepSeek-reasoner 审查 diff（异源审查：审的是 DeepSeek V4 写的代码）。"""
     if not diff.strip():
         return '✅ 无代码变更，跳过审查'
 
-    api_key = os.environ.get('DASHSCOPE_API_KEY', '')
+    api_key = os.environ.get('DEEPSEEK_API_KEY', '')
     if not api_key:
-        return '⚠️ 未配置 DASHSCOPE_API_KEY，跳过审查'
+        return '⚠️ 未配置 DEEPSEEK_API_KEY，跳过审查'
 
     client = OpenAI(
         api_key=api_key,
-        base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
+        base_url='https://api.deepseek.com',
         timeout=60.0,
     )
 
@@ -130,12 +135,8 @@ def review(diff: str) -> str:
 
     try:
         response = client.chat.completions.create(
-            model='qwen3.7-max',
+            model='deepseek-reasoner',
             messages=messages,
-            extra_body={
-                'enable_thinking': True,
-                'thinking_budget': 5000,
-            },
             max_tokens=2000,
             temperature=0.1,
         )
@@ -145,10 +146,27 @@ def review(diff: str) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description='LLM 代码审查工具')
+    parser.add_argument('--format', choices=['text', 'json'], default='text', help='输出格式')
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO, format='%(message)s')
     diff = get_diff()
-    print(f'审查范围: {len(diff)} 字符\n')
-    print(review(diff))
+
+    if args.format == 'json':
+        result = review(diff)
+        print(
+            json.dumps(
+                {
+                    'diff_size': len(diff),
+                    'result': result,
+                },
+                ensure_ascii=False,
+            )
+        )
+    else:
+        print(f'审查范围: {len(diff)} 字符\n')
+        print(review(diff))
 
 
 if __name__ == '__main__':

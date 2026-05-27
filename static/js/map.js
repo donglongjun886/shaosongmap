@@ -536,6 +536,8 @@ function applyTimelineFilters() {
   _safeFilter('unit-banner-label', ['==', ['get', 'step'], currentStep]);
   _safeFilter('unit-direction-line', ['==', ['get', 'step'], currentStep]);
   _safeFilter('unit-direction-arrow', ['==', ['get', 'step'], currentStep]);
+  _safeFilter('comic-unit-icon', ['==', ['get', 'step'], currentStep]);
+  _safeFilter('comic-unit-label', ['==', ['get', 'step'], currentStep]);
 }
 
 // ── 图层切换 ──

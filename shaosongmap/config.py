@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     model_config = {'env_file': '.env', 'env_file_encoding': 'utf-8'}
 
-    deepseek_api_key: str
+    deepseek_api_key: str = ''
     deepseek_base_url: str = 'https://api.deepseek.com'
     dashscope_api_key: str = ''
     cors_origins: list[str] = ['*']

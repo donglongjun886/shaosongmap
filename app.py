@@ -69,6 +69,10 @@ async def _init_settings():
         logging.error('配置校验失败: %s', e)
         raise SystemExit(1) from e
 
+    if not s.deepseek_api_key:
+        logging.error('配置校验失败: DEEPSEEK_API_KEY 未设置')
+        raise SystemExit(1)
+
     import shaosongmap.config as config_mod
 
     config_mod.settings = s

@@ -412,8 +412,10 @@ function _renderComicUnitMarkers(unitBannerFeatures, scale) {
     data: { type: 'FeatureCollection', features: iconFeatures }
   });
 
+  var stepFilter = totalSteps > 0 ? ['==', ['get', 'step'], currentStep] : null;
   map.addLayer({
     id: 'comic-unit-icon', type: 'symbol', source: 'comic-unit-icons',
+    filter: stepFilter,
     layout: {
       'icon-image': ['get', '_icon_key'],
       'icon-size': ['step', ['zoom'], 0.3, 8, 0.5, 12, 0.7],
@@ -424,6 +426,7 @@ function _renderComicUnitMarkers(unitBannerFeatures, scale) {
 
   map.addLayer({
     id: 'comic-unit-label', type: 'symbol', source: 'comic-unit-icons',
+    filter: stepFilter,
     layout: {
       'text-field': ['get', 'unit_name'],
       'text-offset': [0, -1.8],

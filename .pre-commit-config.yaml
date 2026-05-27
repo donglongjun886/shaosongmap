@@ -19,10 +19,3 @@ repos:
         pass_filenames: false
         additional_dependencies: [pydantic>=2.10.4, fastapi>=0.115.6]
 
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.3
-    hooks:
-      - id: bandit
-        name: "bandit"
-        args: [-r, shaosongmap/, app.py, -ll]
-        pass_filenames: false

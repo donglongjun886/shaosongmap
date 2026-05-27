@@ -14,14 +14,13 @@
 - 代码质量: ruff（格式化 + Lint，替代 black/isort/flake8）
 - 静态类型: mypy（宽松起步，逐步收紧）
 - 测试: pytest + pytest-cov（覆盖率阈值 70%）
-- 安全扫描: bandit
-- 预提交: pre-commit 钩子链（ruff format → ruff check → mypy → bandit）
+- 预提交: pre-commit 钩子链（ruff format → ruff check → mypy）
 
 ## 2. 代码风格与架构
 - 严格遵循 PEP8 和 PEP 257 规范。
 - 项目采用分层架构：`routers` (接口层) -> `services` (业务层)。
 - 禁止在 `routers` 中编写业务逻辑，使用 Pydantic 模型定义所有请求和响应。
-- 所有代码提交前自动执行 ruff format + ruff check + mypy + bandit。
+- 所有代码提交前自动执行 ruff format + ruff check + mypy。
 - 行宽限制 100 列，使用单引号，isort 自动排序导入。
 
 ## 3. 开发工作流
@@ -30,8 +29,6 @@
 - 手动格式化：`uv run ruff format . && uv run ruff check . --fix`
 - 手动类型检查：`uv run mypy app.py shaosongmap/`
 - 运行测试：`uv run pytest tests/ -v --cov=shaosongmap`
-- 安全扫描：`uv run bandit -r shaosongmap/ app.py -ll`
-
 ## 4. 测试要求
 - 使用 `pytest` 编写所有测试，测试文件置于 `tests/` 目录，命名: `test_<模块名>.py`。
 - 业务逻辑层 (`services`) 的测试覆盖率至少要达到 90%。

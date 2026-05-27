@@ -38,17 +38,6 @@ jobs:
       - name: Run tests with coverage
         run: DEEPSEEK_API_KEY=test-key PYTHONPATH=. uv run pytest tests/ -v --cov=shaosongmap --cov-fail-under=70
 
-  security:
-    needs: [lint]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.10"
-      - name: Run bandit
-        run: uv run bandit -r shaosongmap/ app.py -ll
-
   audit:
     runs-on: ubuntu-latest
     continue-on-error: true

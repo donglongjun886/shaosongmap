@@ -54,11 +54,26 @@
   var unitFeatures = [];
   var routeFeatures = [];
   var terrainFeatures = [];
+  var targetLookup = {};  // name → {x, y} 屏幕坐标缓存（O(1)箭头终点查询）
   var currentStep = 0;
   var totalSteps = 0;
   var currentScale = 'battle';
 
-  // ── 视口裁剪辅助 ──
+  // ── 线段截断到屏幕边缘 ──
+  function _clipToScreen(x1, y1, x2, y2) {
+    var cw = layers.unit ? parseInt(layers.unit.style.width) : 800;
+    var ch = layers.unit ? parseInt(layers.unit.style.height) : 600;
+    var dx = x2 - x1, dy = y2 - y1;
+    var tMax = 1;
+    if (dx > 0) tMax = Math.min(tMax, (cw - 20 - x1) / dx);
+    else if (dx < 0) tMax = Math.min(tMax, (20 - x1) / dx);
+    if (dy > 0) tMax = Math.min(tMax, (ch - 20 - y1) / dy);
+    else if (dy < 0) tMax = Math.min(tMax, (20 - y1) / dy);
+    if (tMax < 0 || tMax > 1) return null;
+    return { x: x1 + dx * tMax, y: y1 + dy * tMax };
+  }
+
+  // ── 视口范围检测 ──
   function _isOnScreen(px, py, margin) {
     var w = layers.unit ? parseInt(layers.unit.style.width) : 800;
     var h = layers.unit ? parseInt(layers.unit.style.height) : 600;
@@ -208,7 +223,7 @@
     ], {
       stroke: col, strokeWidth: Math.max(1, lw * 0.7),
       fill: col, fillStyle: 'solid',
-      roughness: 1.0, bowing: 0.8, seed: seedBase + 1
+      roughness: 1.0, bowing: 0.8, seed: seedBase
     });
 
     // 交战发光
@@ -241,7 +256,6 @@
     var now = performance.now();
     var cZoom = Math.max(6, Math.min(14, zoom));
     var flagSize = _lerpZoom(zoom, 6, 14, 48, 80);
-    var arrowBaseLen = _lerpZoom(zoom, 6, 14, 90, 200);
     var arrowLineW = _lerpZoom(zoom, 6, 14, 6, 14);
     var labelFontSize = _lerpZoom(zoom, 6, 14, 11, 13);
 
@@ -285,24 +299,27 @@
 
       _drawFlag(ctx, pt.x, drawY, faction, unitName, flagSize, labelFontSize);
 
-      if (props.direction && props.direction !== '未明确') {
-        var dirAngle = _directionAngle(props.direction);
-        if (dirAngle !== null) {
-          var arrowLen = arrowBaseLen;
-          var endX = pt.x + Math.cos(dirAngle) * arrowLen;
-          var endY = drawY - flagSize / 2 - Math.sin(dirAngle) * arrowLen;
-          _drawArrow(ctx, pt.x, drawY - flagSize / 2, endX, endY, _factionColor(faction), status, arrowLineW);
+      // 箭头：direction_target 指向目标地点/部队
+      var targetName = props.direction_target;
+      if (targetName && targetLookup[targetName]) {
+        var tgt = targetLookup[targetName];
+        var endPt = map.project([tgt.lng, tgt.lat]);
+        if (endPt && isFinite(endPt.x) && isFinite(endPt.y)) {
+          var startX = pt.x;
+          var startY = drawY - flagSize / 2;
+          var arrowLen = Math.hypot(endPt.x - startX, endPt.y - startY);
+          if (arrowLen >= 40) {
+            var edgeX = endPt.x;
+            var edgeY = endPt.y;
+            if (!_isOnScreen(endPt.x, endPt.y, 0)) {
+              var clip = _clipToScreen(startX, startY, endPt.x, endPt.y);
+              if (clip) { edgeX = clip.x; edgeY = clip.y; }
+            }
+            _drawArrow(ctx, startX, startY, edgeX, edgeY, _factionColor(faction), status, arrowLineW);
+          }
         }
       }
     });
-  }
-
-  // ── 方向→角度映射 ──
-  function _directionAngle(dir) {
-    var d = (dir || '').replace(/偏[东西南北]/g, '');
-    var angles = { '北': Math.PI / 2, '南': -Math.PI / 2, '东': 0, '西': Math.PI,
-                   '东北': Math.PI / 4, '东南': -Math.PI / 4, '西北': 3 * Math.PI / 4, '西南': -3 * Math.PI / 4 };
-    return angles[d] !== undefined ? angles[d] : null;
   }
 
   // ── 路线层渲染（routeCanvas, 步骤切换时重绘） ──
@@ -517,6 +534,28 @@
   // ── 公开 API ──
   function setData(unitBannerFeatures, unitDirectionFeatures, terrainFeats, scale) {
     unitFeatures = unitBannerFeatures || [];
+    // 构建 targetLookup: name → {lng, lat} 地理坐标（O(1) 渲染时查询）
+    targetLookup = {};
+    unitFeatures.forEach(function (f) {
+      var name = (f.properties && f.properties.unit_name) || '';
+      var coords = f.geometry && f.geometry.coordinates;
+      if (name && coords && coords.length >= 2) targetLookup[name] = { lng: coords[0], lat: coords[1] };
+    });
+    // 从 places source 补充地名坐标
+    try {
+      var placesSrc = map && map.getSource && map.getSource('places');
+      if (placesSrc) {
+        var pData = placesSrc._data;
+        if (pData && pData.features) {
+          pData.features.forEach(function (f) {
+            var name = (f.properties && f.properties.name) || '';
+            var coords = f.geometry && f.geometry.coordinates;
+            if (name && coords && coords.length >= 2) targetLookup[name] = { lng: coords[0], lat: coords[1] };
+          });
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     // 合并方向信息
     if (unitDirectionFeatures && unitDirectionFeatures.length) {
       var dirMap = {};

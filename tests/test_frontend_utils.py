@@ -249,14 +249,19 @@ class TestFrontendFileSplit:
         assert 'href="css/map.css"' in resp.text
 
     def test_js_loads_in_correct_order(self):
-        """JS 按 utils.js → map.js → app.js 顺序加载。"""
+        """JS 按 utils → canvasRenderer → terrainRenderer → map → app 顺序加载。"""
         resp = _client.get('/')
         scripts = re.findall(r'<script src="([^"]+)"', resp.text)
         # 过滤出本地 JS（非 CDN）
         local_scripts = [s for s in scripts if s.startswith('js/')]
-        assert local_scripts == ['js/utils.js', 'js/map.js', 'js/app.js'], (
-            f'JS 加载顺序不正确: {local_scripts}'
-        )
+        expected = [
+            'js/utils.js',
+            'js/canvasRenderer.js',
+            'js/terrainRenderer.js',
+            'js/map.js',
+            'js/app.js',
+        ]
+        assert local_scripts == expected, f'JS 加载顺序不正确: {local_scripts}'
 
     def test_maplibre_cdn_present(self):
         """页面应引用 MapLibre GL，优先 jsdelivr（国内连通性更好）。"""

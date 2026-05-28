@@ -13,7 +13,9 @@ try {
       layers: []
     },
     center: [112, 33],
-    zoom: 5
+    zoom: 5,
+    maxPitch: 0,
+    maxBearing: 0
   });
 } catch (e) {
   console.error('[map] 地图初始化失败，请检查网络或 CDN 连通性:', e.message);
@@ -65,12 +67,15 @@ function applyBasemap(name) {
 if (map) map.on('load', () => {
   console.log('[map.onload] map loaded, applying basemap and registering icons');
   applyBasemap('schematic');
+  CanvasRenderer.init(map);
 
-  const ink = '#2c2c2c', ochre = '#8b4513';
-  map.addImage('fortress', _makeIconSVG('fortress', ink, 32), { pixelRatio: 2 });
-  map.addImage('fortress-dim', _makeIconSVG('fortress', '#aaa', 32), { pixelRatio: 2 });
-  map.addImage('camp', _makeIconSVG('camp', ochre, 32), { pixelRatio: 2 });
-  map.addImage('camp-dim', _makeIconSVG('camp', '#bbb', 32), { pixelRatio: 2 });
+  // 加载古风 SVG 图标（game-icons.net 原版路径, 仅改色）
+  _loadSvgIcon('fortress', 'assets/icons/fortress.svg', map);
+  _loadSvgIcon('camp', 'assets/icons/camp.svg', map);
+  _loadSvgIcon('banner-song', 'assets/icons/banner-song.svg', map);
+  _loadSvgIcon('banner-jin', 'assets/icons/banner-jin.svg', map);
+  _loadSvgIcon('banner-engaging', 'assets/icons/banner-engaging.svg', map);
+
   const arrowCanvas = document.createElement('canvas');
   arrowCanvas.width = 24; arrowCanvas.height = 24;
   const actx = arrowCanvas.getContext('2d');
@@ -78,10 +83,6 @@ if (map) map.on('load', () => {
   actx.beginPath(); actx.moveTo(20, 12); actx.lineTo(4, 4); actx.lineTo(4, 20);
   actx.closePath(); actx.fill();
   map.addImage('arrowhead', actx.getImageData(0, 0, 24, 24), { pixelRatio: 2 });
-  map.addImage('banner-song', _makeBannerIcon('#2b4c7e', 32), { pixelRatio: 2 });
-  map.addImage('banner-jin', _makeBannerIcon('#8b4513', 32), { pixelRatio: 2 });
-  map.addImage('banner-engaging', _makeBannerIcon('#c23b22', 32), { pixelRatio: 2 });
-  map.addImage('banner-dim', _makeBannerIcon('#999', 32), { pixelRatio: 2 });
 
   map.addSource('places', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addSource('routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -89,12 +90,12 @@ if (map) map.on('load', () => {
   map.addLayer({
     id: 'places-chgis', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'source'], 'chgis'],
-    layout: { 'icon-image': 'fortress', 'icon-size': ['step', ['zoom'], 0.2, 5, 0.35, 8, 0.55, 12, 0.8], 'icon-allow-overlap': true }
+    layout: { 'icon-image': 'fortress', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true }
   });
   map.addLayer({
     id: 'places-llm', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'source'], 'llm_infer'],
-    layout: { 'icon-image': 'camp', 'icon-size': ['step', ['zoom'], 0.15, 5, 0.3, 8, 0.5, 12, 0.7], 'icon-allow-overlap': true }
+    layout: { 'icon-image': 'camp', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true }
   });
   map.addLayer({
     id: 'place-labels-ancient', type: 'symbol', source: 'places',
@@ -128,7 +129,7 @@ if (map) map.on('load', () => {
         'engaging', 'banner-engaging',
         ['match', ['get', 'faction'], '宋', 'banner-song', '金', 'banner-jin', 'banner-song']
       ],
-      'icon-size': ['step', ['zoom'], 0.2, 5, 0.35, 8, 0.55, 12, 0.8],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0],
       'icon-allow-overlap': true,
       'icon-ignore-placement': true
     }
@@ -171,14 +172,14 @@ if (map) map.on('load', () => {
   map.addLayer({
     id: 'places-chgis-dim', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    layout: { 'icon-image': 'fortress-dim', 'icon-size': ['step', ['zoom'], 0.12, 5, 0.22, 8, 0.38, 12, 0.55], 'icon-allow-overlap': true },
-    paint: { 'icon-opacity': 0.35 }
+    layout: { 'icon-image': 'fortress', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true },
+    paint: { 'icon-opacity': 0.4 }
   });
   map.addLayer({
     id: 'places-llm-dim', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    layout: { 'icon-image': 'camp-dim', 'icon-size': ['step', ['zoom'], 0.1, 5, 0.2, 8, 0.35, 12, 0.5], 'icon-allow-overlap': true },
-    paint: { 'icon-opacity': 0.35 }
+    layout: { 'icon-image': 'camp', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true },
+    paint: { 'icon-opacity': 0.4 }
   });
 
   map.on('click', 'places-chgis', (e) => showPopup(e));
@@ -191,12 +192,35 @@ if (map) map.on('load', () => {
   map.on('mouseenter', 'unit-banner-icon', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'unit-banner-icon', () => { map.getCanvas().style.cursor = ''; });
   console.log('[map.onload] icons, sources, layers all registered');
+  map.on('idle', _collectPlaceBounds);
 });
 
-  // zoom 变化时重新计算部队偏移
-  if (map) map.on('moveend', _onMapMoved);
+// ── SVG 图标加载 ──
+function _loadSvgIcon(name, path, mapInstance, dim) {
+  var img = new Image();
+  img.onload = function() {
+    var canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128;
+    var ctx = canvas.getContext('2d');
+    if (dim) {
+      ctx.globalAlpha = 0.35;
+      ctx.filter = 'grayscale(100%)';
+    }
+    ctx.drawImage(img, 0, 0, 128, 128);
+    mapInstance.addImage(name, ctx.getImageData(0, 0, 128, 128), { pixelRatio: 2 });
+    console.log('[icon] loaded ' + name + (dim ? ' (dim)' : '') + ' from ' + path);
+  };
+  img.onerror = function() {
+    console.warn('[icon] failed to load ' + path + ', using fallback');
+    // 回退到手绘几何图形
+    var fallback = _makeIconSVG(name.indexOf('camp') >= 0 ? 'camp' : 'fortress',
+      dim ? '#aaa' : '#2c2c2c', 32);
+    mapInstance.addImage(name, fallback, { pixelRatio: 2 });
+  };
+  img.src = path;
+}
 
-// ── 自定义城池/营寨图标 ──
+// ── 自定义城池/营寨图标（回退方案） ──
 function _makeIconSVG(type, color, size) {
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
@@ -229,6 +253,21 @@ function _makeBannerIcon(color, size) {
   ctx.moveTo(size/2, 2); ctx.lineTo(size/2+5, 7); ctx.lineTo(size/2-5, 7);
   ctx.closePath(); ctx.fill();
   return ctx.getImageData(0, 0, size, size);
+}
+
+// ── 块状宽箭头（已迁移到 CanvasRenderer, 保留函数签名兼容性） ──
+// @deprecated 使用 CanvasRenderer._drawArrow 替代
+function _drawWideArrow(ctx, x1, y1, x2, y2, width, color, status, unitName) {
+  // 回退绘制：当 CanvasRenderer 不可用时使用简化版
+  if (!ctx) return;
+  ctx.save();
+  ctx.strokeStyle = color || '#c23b22';
+  ctx.lineWidth = width || 14;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function showPopup(e) {
@@ -379,164 +418,10 @@ function _applyComicLabelHalo(scale) {
   });
 }
 
-function _renderComicUnitMarkers(unitBannerFeatures, scale) {
-  ['comic-unit-icon', 'comic-unit-label'].forEach(function(id) {
-    if (map.getLayer(id)) map.removeLayer(id);
-  });
-  if (map.getSource('comic-unit-icons')) map.removeSource('comic-unit-icons');
-  ['comic-song', 'comic-jin', 'comic-unknown', 'comic-engaging'].forEach(function(id) {
-    try { if (map.hasImage(id)) map.removeImage(id); } catch(e) {}
-  });
-
-  var origVisibility = (scale === 'tactical') ? 'none' : 'visible';
-  ['unit-banner-icon', 'unit-banner-label'].forEach(function(id) {
-    _safeLayout(id, 'visibility', origVisibility);
-  });
-
-  if (scale !== 'tactical' || unitBannerFeatures.length === 0) { return; }
-
-  var iconDefs = {
-    'comic-song': '#2b4c7e',
-    'comic-jin': '#c23b22',
-    'comic-unknown': '#2c2c2c',
-    'comic-engaging': '#e63946'
-  };
-  Object.keys(iconDefs).forEach(function(key) {
-    map.addImage(key, _makeComicUnitIcon(iconDefs[key], 120), { pixelRatio: 2 });
-  });
-
-  const iconFeatures = unitBannerFeatures.map(function(f) {
-    const props = f.properties || {};
-    const faction = props.faction || '';
-    const status = props.status || '';
-    const iconKey = status === 'engaging' ? 'comic-engaging' : (faction.indexOf('宋') >= 0 ? 'comic-song' : faction.indexOf('金') >= 0 ? 'comic-jin' : 'comic-unknown');
-    return {
-      type: 'Feature',
-      geometry: f.geometry,
-      properties: Object.assign({}, props, { _icon_key: iconKey }),
-    };
-  });
-
-  map.addSource('comic-unit-icons', {
-    type: 'geojson',
-    data: { type: 'FeatureCollection', features: iconFeatures }
-  });
-
-  var stepFilter = totalSteps > 0 ? ['==', ['get', 'step'], currentStep] : null;
-  map.addLayer({
-    id: 'comic-unit-icon', type: 'symbol', source: 'comic-unit-icons',
-    filter: stepFilter,
-    layout: {
-      'icon-image': ['get', '_icon_key'],
-      'icon-size': ['step', ['zoom'], 0.3, 8, 0.5, 12, 0.7],
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true
-    }
-  });
-
-  map.addLayer({
-    id: 'comic-unit-label', type: 'symbol', source: 'comic-unit-icons',
-    filter: stepFilter,
-    layout: {
-      'text-field': ['get', 'unit_name'],
-      'text-offset': [0, -1.8],
-      'text-size': ['step', ['zoom'], 10, 8, 12, 12, 14],
-      'text-anchor': 'center',
-      'text-allow-overlap': true,
-      'text-ignore-placement': true,
-      'text-optional': false
-    },
-    paint: {
-      'text-color': '#fff',
-      'text-halo-color': 'rgba(0,0,0,0.55)',
-      'text-halo-width': 2.0
-    }
-  });
-
-  map.off('click', 'comic-unit-icon');
-  map.on('click', 'comic-unit-icon', function(e) { showUnitPopup(e); });
-  map.off('mouseenter', 'comic-unit-icon');
-  map.on('mouseenter', 'comic-unit-icon', function() { map.getCanvas().style.cursor = 'pointer'; });
-  map.off('mouseleave', 'comic-unit-icon');
-  map.on('mouseleave', 'comic-unit-icon', function() { map.getCanvas().style.cursor = ''; });
-}
-
-// ── 前端自适应部队偏移 ──
-let _rawBannerFeatures = null;
-let _rawDirectionFeatures = null;
-let _moveendTimer = null;
-
-function _applyUnitOffsets(bannerFeatures, directionFeatures, zoom) {
-  if (!bannerFeatures || bannerFeatures.length === 0) return;
-  // 1. 按真实坐标分组
-  var groups = {};
-  bannerFeatures.forEach(function(f, i) {
-    var c = f.geometry.coordinates;
-    var key = c[0].toFixed(6) + ',' + c[1].toFixed(6);
-    if (!groups[key]) groups[key] = [];
-    groups[key].push({ idx: i, slot: (f.properties && f.properties._slot) || 0 });
-  });
-  // 2. 像素→度数转换
-  var sumLat = 0;
-  bannerFeatures.forEach(function(f) { sumLat += f.geometry.coordinates[1]; });
-  var midLat = sumLat / bannerFeatures.length;
-  var mPerPx = 156543 * Math.cos(midLat * Math.PI / 180) / Math.pow(2, zoom || 10);
-  var isComic = document.querySelector('.map-wrap').classList.contains('theme-comic');
-  var iconPx = isComic ? 84 : 26;
-  var spacingDeg = (iconPx * 1.3) * mPerPx / 111320;
-  // 3. 计算每个 feature 的偏移（按 unit_name+step 匹配）
-  var offsetMap = {};
-  Object.values(groups).forEach(function(group) {
-    group.sort(function(a, b) { return a.slot - b.slot; });
-    group.forEach(function(item) {
-      var f = bannerFeatures[item.idx];
-      var key = f.properties.unit_name + '@' + f.properties.step;
-      offsetMap[key] = [0, (item.slot + 1) * spacingDeg];
-    });
-  });
-  // 4. 应用到 banner features
-  bannerFeatures.forEach(function(f) {
-    var key = f.properties.unit_name + '@' + f.properties.step;
-    var off = offsetMap[key];
-    if (off) { f.geometry.coordinates[0] += off[0]; f.geometry.coordinates[1] += off[1]; }
-  });
-  // 5. 应用到 direction features
-  directionFeatures.forEach(function(f) {
-    var key = f.properties.unit_name + '@' + f.properties.step;
-    var off = offsetMap[key];
-    if (off && f.geometry.coordinates) {
-      for (var i = 0; i < f.geometry.coordinates.length; i++) {
-        f.geometry.coordinates[i][0] += off[0];
-        f.geometry.coordinates[i][1] += off[1];
-      }
-    }
-  });
-}
-
-function _onMapMoved() {
-  if (!_rawBannerFeatures) return;
-  clearTimeout(_moveendTimer);
-  _moveendTimer = setTimeout(function() {
-    var banners = _rawBannerFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
-    var dirs = _rawDirectionFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
-    _applyUnitOffsets(banners, dirs, map.getZoom());
-    map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: banners });
-    map.getSource('unit-directions').setData({ type: 'FeatureCollection', features: dirs });
-    if (map.getSource('comic-unit-icons')) {
-      var comicFeatures = banners.map(function(f) {
-        var props = f.properties || {};
-        var faction = props.faction || '';
-        var status = props.status || '';
-        var iconKey = status === 'engaging' ? 'comic-engaging' :
-          (faction.indexOf('宋') >= 0 ? 'comic-song' :
-           faction.indexOf('金') >= 0 ? 'comic-jin' : 'comic-unknown');
-        return { type: 'Feature', geometry: f.geometry,
-          properties: Object.assign({}, props, { _icon_key: iconKey }) };
-      });
-      map.getSource('comic-unit-icons').setData({ type: 'FeatureCollection', features: comicFeatures });
-    }
-  }, 100);
-}
+// @deprecated _renderComicUnitMarkers 已迁移到 CanvasRenderer
+// tactical 模式下兵牌由 CanvasRenderer 的 unitCanvas 层渲染
+// ── 部队偏移（已迁移到 CanvasRenderer 像素空间，地理偏移已废弃） ──
+// @deprecated 保留空函数兼容性
 
 function updateMap(data) {
   if (!map) { console.warn('[updateMap] map not initialized, skipping'); return; }
@@ -554,16 +439,29 @@ function updateMap(data) {
   console.log('[updateMap] places:', placeFeatures.length, 'routes:', routeFeatures.length,
     'banners:', unitBannerFeatures.length, 'directions:', unitDirectionFeatures.length);
 
-  // 保存原始坐标（用于 zoom 变化时重新计算偏移）
-  _rawBannerFeatures = unitBannerFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
-  _rawDirectionFeatures = unitDirectionFeatures.map(function(f) { return JSON.parse(JSON.stringify(f)); });
-  // 应用当前 zoom 级别的像素偏移
-  _applyUnitOffsets(unitBannerFeatures, unitDirectionFeatures, map.getZoom());
+  // CanvasRenderer 接管部队渲染（像素空间偏移，替代旧的地理偏移方案）
+  CanvasRenderer.setData(unitBannerFeatures, unitDirectionFeatures, [], data.scale);
 
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
-  map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: unitBannerFeatures });
-  map.getSource('unit-directions').setData({ type: 'FeatureCollection', features: unitDirectionFeatures });
+  // unit-banners 和 unit-directions MapLibre layers 在 tactical 模式下由 CanvasRenderer 替代
+  // 非 tactical 模式下仍使用 MapLibre layers（兼容）
+  var hideMapLibreUnits = (data.scale === 'tactical');
+  if (map.getSource('unit-banners')) {
+    if (hideMapLibreUnits) {
+      _safeLayout('unit-banner-icon', 'visibility', 'none');
+      _safeLayout('unit-banner-label', 'visibility', 'none');
+      _safeLayout('unit-direction-line', 'visibility', 'none');
+      _safeLayout('unit-direction-arrow', 'visibility', 'none');
+    } else {
+      map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: unitBannerFeatures });
+      map.getSource('unit-directions').setData({ type: 'FeatureCollection', features: unitDirectionFeatures });
+      _safeLayout('unit-banner-icon', 'visibility', 'visible');
+      _safeLayout('unit-banner-label', 'visibility', 'visible');
+      _safeLayout('unit-direction-line', 'visibility', 'visible');
+      _safeLayout('unit-direction-arrow', 'visibility', 'visible');
+    }
+  }
   var anchorFeatures = [];
   routeFeatures.forEach(function(f) {
     var coords = f.geometry && f.geometry.coordinates;
@@ -582,9 +480,12 @@ function updateMap(data) {
   _applyComicTheme(data.scale);
   _renderSeal(data.campaign_name);
   _renderTerrainBlocks(placeFeatures, data.scale);
-  _renderComicUnitMarkers(unitBannerFeatures, data.scale);
+  // Comic unit markers 已迁移到 CanvasRenderer（tactical 模式）
+  // 非 tactical 模式下 MapLibre unit-banners layers 正常渲染
   _applyComicRouteStyle(data.scale);
   _applyComicLabelHalo(data.scale);
+  // CanvasRenderer 已通过 setData 更新数据，markDirty 触发重绘
+  CanvasRenderer.markDirty('unit');
   console.log('[updateMap] fitBounds starting');
 
   if (placeFeatures.length > 0) {
@@ -639,6 +540,8 @@ function applyTimelineFilters() {
   _safeFilter('unit-direction-arrow', ['==', ['get', 'step'], currentStep]);
   _safeFilter('comic-unit-icon', ['==', ['get', 'step'], currentStep]);
   _safeFilter('comic-unit-label', ['==', ['get', 'step'], currentStep]);
+  // CanvasRenderer 时间轴同步
+  CanvasRenderer.setTimeline(currentStep, totalSteps);
 }
 
 // ── 图层切换 ──
@@ -653,6 +556,57 @@ function toggleUnitLayers(visible) {
   _safeLayout('comic-unit-icon', 'visibility', v);
   _safeLayout('comic-unit-label', 'visibility', v);
 }
+
+// ── 碰撞避让：收集地名屏幕像素边界盒（idle 事件触发） ──
+var _placeBoundsCache = [];
+
+function _collectPlaceBounds() {
+  if (!map) return;
+  _placeBoundsCache = [];
+  var zoom = map.getZoom();
+  var iconScale = _interpolateIconSize(zoom);
+  var iconPx = 128 * iconScale;
+  var fontSize = Math.round(10 + (zoom - 6) * 0.5); // 标签字号 lerp: zoom6→10, zoom14→14
+
+  try {
+    var placesSource = map.getSource('places');
+    if (!placesSource) return;
+    var data = placesSource._data;
+    if (!data || !data.features) return;
+    var features = data.features;
+
+    // 创建离屏 canvas 用于 measureText
+    var measureCtx = document.createElement('canvas').getContext('2d');
+    measureCtx.font = fontSize + 'px "Noto Serif SC", "SimSun", serif';
+
+    features.forEach(function (f) {
+      if (f.geometry && f.geometry.coordinates) {
+        var pt = map.project(f.geometry.coordinates);
+        var name = (f.properties && f.properties.name) || '';
+        var textW = measureCtx.measureText(name).width;
+        var aabbW = Math.max(iconPx, textW) + 8;
+        var aabbH = iconPx + 20;
+        _placeBoundsCache.push({
+          x: pt.x - aabbW / 2,
+          y: pt.y - aabbH + 4,
+          w: aabbW,
+          h: aabbH
+        });
+      }
+    });
+  } catch (e) {
+    // source 不存在时静默
+  }
+}
+
+function _interpolateIconSize(zoom) {
+  // 复现 MapLibre interpolate: zoom 6→0.55, 10→0.78, 14→1.0
+  var z = Math.max(6, Math.min(14, zoom));
+  return 0.55 + (z - 6) * (1.0 - 0.55) / (14 - 6);
+}
+
+// 暴露给 CanvasRenderer
+function getPlaceBounds() { return _placeBoundsCache; }
 
 function showUnitPopup(e) {
   var props = e.features[0].properties;

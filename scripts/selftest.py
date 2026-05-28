@@ -10,13 +10,31 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
+from PIL import Image
+
 _THIS_DIR = Path(__file__).resolve().parent
+
+
+def _compress_image(path: str, max_edge: int = 1280, quality: int = 85) -> str:
+    """压缩截图：缩到最长边 max_edge，输出 JPEG。返回新路径。"""
+    img = Image.open(path)
+    w, h = img.size
+    if max(w, h) > max_edge:
+        ratio = max_edge / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+    if img.mode in ('RGBA', 'P'):
+        img = img.convert('RGB')
+    new_path = str(Path(path).with_suffix('.jpg'))
+    img.save(new_path, format='JPEG', quality=quality, optimize=True)
+    return new_path
+
 
 _TEST_TEXT = (
     '王彦令焦文通部自东坡塬北侧列阵，弓弩手居前，步卒持长矛继后。'
@@ -135,6 +153,13 @@ def main() -> None:
 
     try:
         errors, warnings, checks = _screenshot(args.url, args.text, screenshot_path)
+        old_size = Path(screenshot_path).stat().st_size
+        screenshot_path = _compress_image(screenshot_path)
+        new_size = Path(screenshot_path).stat().st_size
+        print(f'→ 截图压缩: {old_size / 1024:.0f}KB → {new_size / 1024:.0f}KB')
+        # 清理原始 PNG
+        with contextlib.suppress(OSError):
+            Path(screenshot_path).with_suffix('.png').unlink(missing_ok=True)
     except Exception as e:
         print(f'❌ 截图失败: {e}')
         sys.exit(1)

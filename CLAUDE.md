@@ -36,23 +36,59 @@
 
 ## 5. 多模型协作（MCP 工具调用规则）
 
-本项目采用"主控 Agent + 专业工具"架构。主控模型 DeepSeek V4 Pro 负责意图理解和代码生成，
-以下专业能力通过 MCP 工具调用外部模型：
+本项目采用"主控 Agent + 专业工具"架构。主控模型 DeepSeek V4 Pro 负责意图理解、OpenSpec 设计
+和复杂算法实现，以下专业能力通过 MCP 工具调用外部模型：
 
-| 场景 | 工具 | 底层模型 | 触发条件 |
-|------|------|---------|---------|
-| 看图/截图分析 | `analyze_ui` | Qwen-VL-Max | 用户贴图、UI 审查、设计参考提取 |
-| 代码审查 | `review_code` | DeepSeek-reasoner | 写完代码后自审、PR 前检查 |
-| 前端自测 | `run_e2e_test` | Playwright+Qwen-VL | 前端改动后验证渲染效果 |
+### 工具清单
 
-**强制规则：**
-1. 涉及图片分析时，**必须**调用 `analyze_ui`，严禁用主控模型"猜测"图片内容
+| 工具 | 底层模型 | 用途 | 触发条件 |
+|------|---------|------|---------|
+| `generate_frontend` | Qwen-VL-Max | 看图生成视觉骨架代码（皮） | 前端新功能/改布局，有截图参考时 |
+| `review_code` | DeepSeek-reasoner | 异源审查 | 写完一段完整功能后 |
+| `run_e2e_test` | Playwright+Qwen-VL | 自动化自测 | 前端改动后验证渲染效果 |
+| `analyze_ui` | Qwen-VL-Max | 人工视觉诊断 | 用户发现自测结果有问题，贴截图深入分析 |
+
+### 前端开发"皮/骨"分工
+
+Qwen-VL-Max 画"皮"——负责还原"长什么样"：
+- HTML 结构、CSS 布局
+- 古风配色（#f5f0e1 背景 / #8b4513 棕色系 / #c41e3a 朱砂红）、Noto Serif SC 字体渲染
+- Canvas 2D 兵牌/旗帜/图标基础绘制
+- 基础 UI 交互骨架
+
+DeepSeek 主控画"骨"——负责实现"怎么动"：
+- 贝塞尔曲线 / 毛笔笔锋粗细变化算法
+- MapLibre GL JS 坐标矩阵变换
+- Canvas 与底图缩放同步（rAF + 脏标记）
+- 复杂状态机管理
+
+> generate_frontend 遇到复杂算法时用占位函数 + 注释标注，留给主控后续注入。不要越界去写"骨"。
+
+### 前端开发完整流程
+
+```
+截图/需求 → generate_frontend(Qwen-VL)→ 视觉骨架代码(皮)
+                                            │
+                                    主控 DeepSeek 审查骨架 → 注入复杂逻辑(骨)
+                                            │
+                                    run_e2e_test 自动化自测
+                                            │
+                            pass ←──→ fail → 用户发现视觉问题
+                                                   │
+                                           贴截图 → analyze_ui 诊断
+```
+
+### 强制规则
+
+1. 前端新增功能或有参考截图时，**必须**先调 `generate_frontend` 获取视觉骨架，再由主控注入复杂逻辑
 2. 写完一段完整功能后，**必须**调用 `review_code` 做异源审查
-3. 前端改动完成后，**建议**调用 `run_e2e_test` 验证
-4. 同一工具连续返回 error **2 次必须停止**，向用户报告，禁止无限重试
-5. 修改了 `mcp/qwen_mcp_server.py` 源码后，**必须提醒用户重启 Claude Code** 才能生效（MCP 进程不会热更新）
+3. 前端改动完成后，**必须**调用 `run_e2e_test` 验证
+4. 用户贴截图诊断视觉问题时，**必须**调用 `analyze_ui`，严禁主控模型"猜测"图片内容
+5. 同一工具连续返回 error **2 次必须停止**，向用户报告，禁止无限重试
+6. 修改了 `mcp_server/qwen_mcp_server.py` 源码后，**必须提醒用户重启 Claude Code** 才能生效（MCP 进程不会热更新）
 
-**设计原则：**
-- 主控 DeepSeek 写代码，Qwen 看图，DeepSeek-reasoner 审查 —— 永远保持异源
+### 设计原则
+
+- Qwen-VL 画皮，DeepSeek 画骨，DeepSeek-reasoner 审查 —— 永远保持异源
 - MCP 工具返回的是结构化摘要，不是原始日志
-- 工具层内部处理瞬态重试（1次），只有业务级错误才暴露给主控
+- 工具层内部处理瞬态重试（1 次），只有业务级错误才暴露给主控

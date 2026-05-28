@@ -3,6 +3,7 @@
     "qwen-tools": {
       "command": "python",
       "args": ["mcp_server/qwen_mcp_server.py"],
+      "cwd": "/Users/donglongjun/IdeaProjects/shaosongmap",
       "env": {
         "DASHSCOPE_API_KEY": "${DASHSCOPE_API_KEY}",
         "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY}"

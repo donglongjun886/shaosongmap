@@ -7,6 +7,20 @@
 - 完成一个功能单元后，为我生成单元测试和对应的提交信息。
 - 绝不修改未被明确提及的文件，每次只做最小化修改。
 
+### Git 提交前检查清单
+
+每次 `git commit` 前**必须**完成：
+1. `review_code` — 异源审查（DeepSeek-reasoner），修复所有 🔴 严重问题
+2. `uv run ruff format . && uv run ruff check . --fix` — 格式化+lint
+3. `uv run mypy app.py shaosongmap/` — 类型检查
+4. `PYTHONPATH=. uv run pytest tests/ -v --cov=shaosongmap` — 全量测试通过
+
+审查发现的问题分级处理：
+- 🔴 严重：必须立即修复再提交
+- 🟡 建议：自行判断是否修复
+- 🟢 轻微/风格：顺手修复
+- 幻觉（与代码实际不符）：忽略
+
 ## 1. 技术栈
 - Python 3.10+
 - 包管理: uv（依赖锁定 uv.lock，pip 仅作后备）

@@ -48,8 +48,7 @@
   var destroyed = false;
 
   // ── 精灵缓存 ──
-  var arrowSprite = null;
-  var arrowBaseLen = 200; // 箭头精灵的标准长度（用于缩放）
+  var roughCanvas = null; // roughjs 渲染器，每帧直接画箭头（仿 Excalidraw）
 
   // ── 数据 ──
   var unitFeatures = [];
@@ -131,57 +130,7 @@
     });
   }
 
-  // ── 生成箭头精灵（离屏 Canvas, 水平方向, 标准长度） ──
-  function _generateArrowSprite() {
-    if (typeof rough === 'undefined') {
-      console.warn('[CanvasRenderer] roughjs not loaded, arrow sprite unavailable');
-      return;
-    }
-    try {
-      var W = arrowBaseLen;
-      var H = THEME.arrowWidth * 4;
-      var offscreen = document.createElement('canvas');
-      offscreen.width = W;
-      offscreen.height = H;
-
-      var rc = rough.canvas(offscreen);
-      var midY = H / 2;
-      var seed = _hash32('arrow-sprite-v1');
-      var options = {
-        stroke: THEME.factionUnknown,
-        strokeWidth: THEME.arrowWidth,
-        roughness: THEME.arrowRoughness,
-        bowing: THEME.arrowBowing,
-        seed: seed
-      };
-
-      var bodyLen = W * 0.55;
-      rc.line(THEME.arrowWidth, midY, bodyLen, midY, options);
-
-      var headStart = bodyLen;
-      var headW = THEME.arrowWidth * THEME.arrowHeadRatio;
-      rc.linearPath([
-        [headStart, midY - headW],
-        [W - 4, midY],
-        [headStart, midY + headW]
-      ], Object.assign({}, options, { fill: options.stroke, fillStyle: 'solid' }));
-
-      rc.linearPath([
-        [headStart, midY - headW],
-        [W - 4, midY],
-        [headStart, midY + headW]
-      ], Object.assign({}, options, {
-        stroke: THEME.arrowStrokeColor,
-        strokeWidth: THEME.arrowStrokeWidth
-      }));
-
-      arrowSprite = offscreen;
-    } catch (e) {
-      console.error('[CanvasRenderer] arrow sprite generation failed:', e.message);
-    }
-  }
-
-  // ── 旗帜绘制（rAF 热路径, drawImage 贴图） ──
+  // ── 旗帜绘制（render 事件驱动, drawImage 贴图） ──
   function _drawFlag(ctx, px, py, faction, unitName, size, fontSize) {
     if (!bannerLoaded) return;
     var fk = 'unknown';
@@ -207,24 +156,28 @@
     }
   }
 
-  // ── 箭头绘制（lineTo 箭身 + drawImage 头精灵，拆分防变形） ──
+  // ── 箭头绘制（roughjs 每帧直接画，仿 Excalidraw，无缓存） ──
   function _drawArrow(ctx, x1, y1, x2, y2, color, status, lineW) {
+    if (typeof rough === 'undefined' || !roughCanvas) return;
     var dx = x2 - x1;
     var dy = y2 - y1;
-    var length = Math.hypot(dx, dy);
-    if (length < 5) return;
+    var len = Math.hypot(dx, dy);
+    if (len < 5) return;
     var angle = Math.atan2(dy, dx);
     var lw = lineW || THEME.arrowWidth;
+    var col = color || THEME.factionUnknown;
+    var seedBase = _hash32('ar-' + Math.round(x1 + y1));
 
     var alpha = 0.85;
     if (status === 'retreating') alpha = 0.5;
     else if (status === 'routing') alpha = 0.3;
 
-    // 极短箭头保护
-    if (length < lw * 3) {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = color || THEME.factionUnknown;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // 极短箭头：简洁线段，不画头部
+    if (len < lw * 3) {
+      ctx.strokeStyle = col;
       ctx.lineWidth = Math.max(1, lw * 0.5);
       ctx.lineCap = 'round';
       ctx.beginPath();
@@ -235,47 +188,42 @@
       return;
     }
 
-    // 箭身: lineTo 程序化绘制
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = color || THEME.factionUnknown;
-    ctx.lineWidth = lw;
-    ctx.lineCap = 'butt';
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.restore();
+    // 箭身：roughjs 手绘线段
+    var bodyLen = len * 0.65;
+    var bodyX = x1 + Math.cos(angle) * bodyLen;
+    var bodyY = y1 + Math.sin(angle) * bodyLen;
+    roughCanvas.line(x1, y1, bodyX, bodyY, {
+      stroke: col, strokeWidth: lw,
+      roughness: 0.8, bowing: 1.0, seed: seedBase
+    });
 
-    // 箭头头部: drawImage 独立精灵
-    if (arrowSprite) {
-      var headW = Math.min(lw * THEME.arrowHeadRatio, length * 0.3);
-      var headH = headW * 1.2;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(x2, y2);
-      ctx.rotate(angle);
-      // 使用 arrowSprite 的头部区域
-      var spriteSrcX = arrowSprite.width * 0.55; // 精灵后半段是箭头
-      ctx.drawImage(arrowSprite, spriteSrcX, 0, arrowSprite.width - spriteSrcX, arrowSprite.height, 0, -headH / 2, headW, headH);
-      ctx.restore();
-    }
+    // 箭头头：roughjs 手绘三角
+    var headHalfW = Math.min(lw * THEME.arrowHeadRatio / 2, len * 0.15);
+    var perpX = -Math.sin(angle);
+    var perpY = Math.cos(angle);
+    roughCanvas.linearPath([
+      [bodyX + perpX * headHalfW, bodyY + perpY * headHalfW],
+      [x2, y2],
+      [bodyX - perpX * headHalfW, bodyY - perpY * headHalfW]
+    ], {
+      stroke: col, strokeWidth: Math.max(1, lw * 0.7),
+      fill: col, fillStyle: 'solid',
+      roughness: 1.0, bowing: 0.8, seed: seedBase + 1
+    });
 
     // 交战发光
     if (status === 'engaging') {
-      ctx.save();
-      ctx.translate(x1, y1);
-      ctx.rotate(angle);
       ctx.shadowColor = THEME.statusEngaging;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 10;
       ctx.strokeStyle = THEME.statusEngaging;
       ctx.lineWidth = lw + 2;
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(length, 0);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
       ctx.stroke();
-      ctx.restore();
     }
+
+    ctx.restore();
   }
 
   // ── 兵牌层渲染（unitCanvas, render 事件驱动） ──
@@ -503,6 +451,9 @@
       var ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
       ctxs[name] = ctx;
+      if (name === 'unit' && typeof rough !== 'undefined') {
+        roughCanvas = rough.canvas(canvas);
+      }
     });
     dirty.terrain = true;
     dirty.route = true;
@@ -553,7 +504,10 @@
     prevZoomBin = _zoomBin(map.getZoom());
 
     _loadBannerImages();
-    _generateArrowSprite();
+
+    if (typeof rough !== 'undefined') {
+      roughCanvas = rough.canvas(layers.unit);
+    }
 
     dirty.terrain = true;
     dirty.route = true;
@@ -619,7 +573,7 @@
     });
     bannerImages = {};
     bannerLoaded = false;
-    arrowSprite = null;
+    roughCanvas = null;
     roughGen = null;
   }
 

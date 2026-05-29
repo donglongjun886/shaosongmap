@@ -10,7 +10,6 @@
     factionSong: '#2b4c7e',
     factionJin: '#8b4513',
     factionUnknown: '#2c2c2c',
-    statusEngaging: '#e63946',
     cardWidth: 84,
     cardHeight: 56,
     cardRadius: 12,
@@ -24,12 +23,12 @@
     cardShadowOy: 3,
     cardShadowBlur: 4,
     cardShadowColor: 'rgba(0,0,0,0.25)',
-    arrowWidth: 14,
-    arrowHeadRatio: 1.5,
+    arrowWidth: 4,
+    arrowHeadRatio: 8,
     arrowStrokeWidth: 1.5,
     arrowStrokeColor: '#2c2c2c',
-    arrowBowing: 1.5,
-    arrowRoughness: 1.2,
+    arrowBowing: 0,
+    arrowRoughness: 2,
     pixelSpacing: 64,
     defaultRoughness: 0.8,
     defaultBowing: 0.5,
@@ -42,9 +41,6 @@
   var dpr = 1;
   var map = null;
   var roughGen = null;
-  var dirty = { terrain: true, route: true, unit: true };
-  var prevZoomBin = -1;
-  var rafId = null;
   var destroyed = false;
 
   // ── 精灵缓存 ──
@@ -81,21 +77,19 @@
     return px > -m && px < w + m && py > -m && py < h + m;
   }
 
-  // ── 缩放分档（用于 terrainCanvas 重绘判定） ──
-  function _zoomBin(z) {
-    return Math.round(z * 2) / 2;
-  }
-
-  // ── zoom 连续 lerp ──
-  function _lerpZoom(zoom, zMin, zMax, vMin, vMax) {
-    var z = Math.max(zMin, Math.min(zMax, zoom));
-    var t = (z - zMin) / (zMax - zMin);
-    return Math.round(vMin + t * (vMax - vMin));
-  }
-
   // ── smoothstep easing ──
   function _smoothstep(t) {
     return t * t * (3 - 2 * t);
+  }
+
+  // ── scale 参数查表（替代 zoom lerp） ──
+  function _scaleParams(scale) {
+    switch (scale) {
+      case 'tactical':  return { flagSize: 80, arrowLineW: 6, labelFontSize: 13 };
+      case 'battle':    return { flagSize: 64, arrowLineW: 4, labelFontSize: 12 };
+      case 'strategic': return { flagSize: 48, arrowLineW: 3, labelFontSize: 11 };
+      default:          return { flagSize: 64, arrowLineW: 4, labelFontSize: 12 };
+    }
   }
 
   // ── 阵营色 ──
@@ -172,16 +166,16 @@
   }
 
   // ── 箭头绘制（roughjs 每帧直接画，仿 Excalidraw，无缓存） ──
-  function _drawArrow(ctx, x1, y1, x2, y2, color, status, lineW) {
+  function _drawArrow(ctx, x1, y1, x2, y2, color, status, lineW, arrowSeed) {
     if (typeof rough === 'undefined' || !roughCanvas) return;
     var dx = x2 - x1;
     var dy = y2 - y1;
     var len = Math.hypot(dx, dy);
-    if (len < 5) return;
+    if (len < 2) return;
     var angle = Math.atan2(dy, dx);
     var lw = lineW || THEME.arrowWidth;
     var col = color || THEME.factionUnknown;
-    var seedBase = _hash32('ar-' + Math.round(x1 + y1));
+    var seedBase = arrowSeed !== undefined ? arrowSeed : _hash32('ar-' + Math.round(x1 + y1));
 
     var alpha = 0.85;
     if (status === 'retreating') alpha = 0.5;
@@ -190,53 +184,26 @@
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    // 极短箭头：简洁线段，不画头部
-    if (len < lw * 3) {
-      ctx.strokeStyle = col;
-      ctx.lineWidth = Math.max(1, lw * 0.5);
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-      ctx.restore();
-      return;
-    }
-
     // 箭身：roughjs 手绘线段
-    var bodyLen = len * 0.65;
+    var headHalfW = lw * THEME.arrowHeadRatio / 2;
+    var headLen = Math.min(headHalfW * 0.75, len * 0.3);
+    var bodyLen = len - headLen;
     var bodyX = x1 + Math.cos(angle) * bodyLen;
     var bodyY = y1 + Math.sin(angle) * bodyLen;
     roughCanvas.line(x1, y1, bodyX, bodyY, {
       stroke: col, strokeWidth: lw,
-      roughness: 0.8, bowing: 1.0, seed: seedBase
+      roughness: THEME.arrowRoughness, bowing: THEME.arrowBowing, seed: seedBase
     });
 
-    // 箭头头：roughjs 手绘三角
-    var headHalfW = Math.min(lw * THEME.arrowHeadRatio / 2, len * 0.15);
+    // 箭头头：roughjs 两条线段组成 V 形（Excalidraw 方式）
     var perpX = -Math.sin(angle);
     var perpY = Math.cos(angle);
-    roughCanvas.linearPath([
-      [bodyX + perpX * headHalfW, bodyY + perpY * headHalfW],
-      [x2, y2],
-      [bodyX - perpX * headHalfW, bodyY - perpY * headHalfW]
-    ], {
-      stroke: col, strokeWidth: Math.max(1, lw * 0.7),
-      fill: col, fillStyle: 'solid',
-      roughness: 1.0, bowing: 0.8, seed: seedBase
-    });
-
-    // 交战发光
-    if (status === 'engaging') {
-      ctx.shadowColor = THEME.statusEngaging;
-      ctx.shadowBlur = 10;
-      ctx.strokeStyle = THEME.statusEngaging;
-      ctx.lineWidth = lw + 2;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-    }
+    var headOptions = {
+      stroke: col, strokeWidth: lw,
+      roughness: Math.min(1, THEME.arrowRoughness), bowing: THEME.arrowBowing, seed: seedBase
+    };
+    roughCanvas.line(bodyX + perpX * headHalfW, bodyY + perpY * headHalfW, x2, y2, headOptions);
+    roughCanvas.line(bodyX - perpX * headHalfW, bodyY - perpY * headHalfW, x2, y2, headOptions);
 
     ctx.restore();
   }
@@ -252,12 +219,11 @@
 
     if (!unitFeatures.length) return;
 
-    var zoom = map.getZoom();
     var now = performance.now();
-    var cZoom = Math.max(6, Math.min(14, zoom));
-    var flagSize = _lerpZoom(zoom, 6, 14, 48, 80);
-    var arrowLineW = _lerpZoom(zoom, 6, 14, 6, 14);
-    var labelFontSize = _lerpZoom(zoom, 6, 14, 11, 13);
+    var sp = _scaleParams(currentScale);
+    var flagSize = sp.flagSize;
+    var arrowLineW = sp.arrowLineW;
+    var labelFontSize = sp.labelFontSize;
 
     unitFeatures.forEach(function (f) {
       if (totalSteps > 0) {
@@ -315,7 +281,7 @@
               var clip = _clipToScreen(startX, startY, endPt.x, endPt.y);
               if (clip) { edgeX = clip.x; edgeY = clip.y; }
             }
-            _drawArrow(ctx, startX, startY, edgeX, edgeY, _factionColor(faction), status, arrowLineW);
+            _drawArrow(ctx, startX, startY, edgeX, edgeY, _factionColor(faction), status, arrowLineW, props._arrowSeed);
           }
         }
       }
@@ -331,11 +297,9 @@
     var h = parseInt(canvas.style.height);
     ctx.clearRect(0, 0, w, h);
     // 路线由 MapLibre line/symbol layer 渲染，routeCanvas 暂用于额外标注
-    // P0: 保持 MapLibre 路线渲染不变，后续可搬到此层
-    dirty.route = false;
   }
 
-  // ── 地形层渲染（terrainCanvas, zoom 跨 0.5 档时重绘） ──
+  // ── 地形层渲染（缓存到离屏 Canvas，避免 roughjs 重复计算） ──
   function _renderTerrainLayer() {
     var ctx = ctxs.terrain;
     var canvas = layers.terrain;
@@ -343,27 +307,43 @@
     var w = parseInt(canvas.style.width);
     var h = parseInt(canvas.style.height);
     ctx.clearRect(0, 0, w, h);
-    // P0: 地形渲染在 terrainRenderer.js 中实现
-    // 此处调用 terrainRenderer.render(ctx, terrainFeatures, map) 占位
-    if (window.TerrainRenderer && window.TerrainRenderer.render) {
-      window.TerrainRenderer.render(ctx, terrainFeatures, map);
+
+    if (!_terrainCache || _terrainCache.width !== w || _terrainCache.height !== h) {
+      _terrainCache = document.createElement('canvas');
+      _terrainCache.width = canvas.width;
+      _terrainCache.height = canvas.height;
+      var cacheCtx = _terrainCache.getContext('2d');
+      cacheCtx.scale(dpr, dpr);
+      if (window.TerrainRenderer && window.TerrainRenderer.render) {
+        window.TerrainRenderer.render(cacheCtx, terrainFeatures, map, currentScale);
+      }
     }
-    dirty.terrain = false;
+    ctx.drawImage(_terrainCache, 0, 0);
   }
 
-  // ── 渲染循环（MapLibre render 事件驱动，替代独立 rAF） ──
-  var _lastFrameTime = 0;
+  // ── 渲染循环（事件驱动，非每帧 rAF） ──
+  var _needsRender = false;
+  var _terrainCache = null;
+  var _resizeDebounceTimer = null;
 
-  function _onMapRender() {
-    if (!map || destroyed) return;
-    // 与 MapLibre 同帧渲染，不额外节流
+  function _renderAll() {
+    _renderTerrainLayer();
+    _renderRouteLayer();
     _renderUnitLayer();
-    dirty.unit = false;
+    _needsRender = false;
+  }
+
+  function _renderRouteAndUnit() {
+    _renderRouteLayer();
+    _renderUnitLayer();
   }
 
   function _onMapIdle() {
     if (!map || destroyed) return;
-    _recalcOffsets();
+    if (_needsRender) {
+      _recalcOffsets();
+      _renderAll();
+    }
   }
 
   // ── 碰撞避让（idle 时计算 targetOffsetY） ──
@@ -372,8 +352,8 @@
     var placeBounds = typeof getPlaceBounds === 'function' ? getPlaceBounds() : [];
     var screenH = layers.unit ? parseInt(layers.unit.style.height) : 600;
     if (!screenH || screenH < 10) screenH = 600;
-    var zoom = map.getZoom();
-    var flagSize = _lerpZoom(zoom, 6, 14, 48, 80);
+    var sp = _scaleParams(currentScale);
+    var flagSize = sp.flagSize;
     var stepPx = flagSize + 4;
     var drawnRects = []; // 重置每轮碰撞计算
     var now = performance.now();
@@ -450,16 +430,15 @@
     var container = map.getCanvasContainer();
     var cw = container.clientWidth || container.offsetWidth || 800;
     var ch = container.clientHeight || container.offsetHeight || 600;
-    // 防止 MapLibre 动画期间出现零高度
-    if (ch < 10) return; // 忽略无效 resize
+    if (ch < 10) return;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     var pw = Math.min(cw * dpr, THEME.maxPhysicalPx);
     var ph = Math.min(ch * dpr, THEME.maxPhysicalPx);
+    _terrainCache = null; // 尺寸变化后重建 terrain 缓存
 
     ['terrain', 'route', 'unit'].forEach(function (name) {
       var canvas = layers[name];
       if (!canvas) return;
-      // 仅在尺寸确实变化时更新
       if (canvas.style.width === cw + 'px' && canvas.style.height === ch + 'px') return;
       canvas.style.width = cw + 'px';
       canvas.style.height = ch + 'px';
@@ -472,9 +451,13 @@
         roughCanvas = rough.canvas(canvas);
       }
     });
-    dirty.terrain = true;
-    dirty.route = true;
-    dirty.unit = true;
+
+    // 防抖 150ms 后重绘
+    clearTimeout(_resizeDebounceTimer);
+    _resizeDebounceTimer = setTimeout(function () {
+      _recalcOffsets();
+      _renderAll();
+    }, 150);
   }
 
   // ── 初始化 ──
@@ -514,21 +497,14 @@
       ctxs[name] = ctx;
     });
 
-    map.on('render', _onMapRender);
     map.on('idle', _onMapIdle);
     map.on('resize', _onResize);
-
-    prevZoomBin = _zoomBin(map.getZoom());
 
     _loadBannerImages();
 
     if (typeof rough !== 'undefined') {
       roughCanvas = rough.canvas(layers.unit);
     }
-
-    dirty.terrain = true;
-    dirty.route = true;
-    dirty.unit = true;
   }
 
   // ── 公开 API ──
@@ -564,24 +540,23 @@
         if (dirMap[key]) props.direction = dirMap[key];
       });
     }
+    // 预生成箭头 seed（Excalidraw 模式：种子存数据模型，拖拽/缩放不变）
+    unitFeatures.forEach(function (f) {
+      var props = f.properties || {};
+      if (props.direction_target) {
+        props._arrowSeed = _hash32('arrow-' + (props.unit_name || '') + '-' + props.direction_target);
+      }
+    });
     terrainFeatures = [];
     currentScale = scale || 'battle';
-    dirty.unit = true;
-    dirty.route = true;
-    dirty.terrain = true;
+    _terrainCache = null; // scale 变化后重建 terrain 缓存
+    _needsRender = true;
   }
 
   function setTimeline(step, total) {
     currentStep = step;
     totalSteps = total;
-    dirty.unit = true;
-    dirty.route = true;
-  }
-
-  function markDirty(layerName) {
-    if (dirty.hasOwnProperty(layerName)) {
-      dirty[layerName] = true;
-    }
+    _renderRouteAndUnit();
   }
 
   function resize() {
@@ -590,10 +565,8 @@
 
   function destroy() {
     destroyed = true;
-    if (rafId) cancelAnimationFrame(rafId);
-    clearTimeout(zoomDebounceTimer);
+    clearTimeout(_resizeDebounceTimer);
     if (map) {
-      map.off('render', _onMapRender);
       map.off('idle', _onMapIdle);
       map.off('resize', _onResize);
     }
@@ -615,7 +588,6 @@
     init: init,
     setData: setData,
     setTimeline: setTimeline,
-    markDirty: markDirty,
     resize: resize,
     destroy: destroy,
     getUnitFeatures: function () { return unitFeatures; },

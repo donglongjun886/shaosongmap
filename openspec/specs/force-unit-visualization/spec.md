@@ -14,7 +14,7 @@
 - 方向指示线从旗帜锚点沿方向角延伸，使用虚线样式 `[6, 3]`，末端带箭镞
 - 无方向时仅显示旗帜，不生成方向线
 - 特征通过 `_feature_type` 属性区分：`unit_banner`（Point）和 `unit_direction`（LineString）
-- 旗帜图标尺寸通过 `icon-size` zoom step 表达式自适应缩放
+- 旗帜图标使用固定 `icon-size: 0.78`（地图缩放/拖拽已禁用）
 - 当该部队在当前步骤无状态记录时，沿用上一步骤的已知状态和位置
 - 状态为 `routing` 的部队在后续步骤中旗帜灰显并逐渐淡出
 
@@ -50,7 +50,7 @@
 偏移算法 MUST：
 - 同地多部队的旗帜统一沿南北方向做平行错位展开，以中心为基准向两侧分布
 - 偏移量为 `body_width_est * 1.2 * offset_idx`，其中 `body_width_est` 为基于数据对角线估算的旗帜宽度，`offset_idx` 为部队序号相对于中点的偏移
-- 偏移量随地图 zoom 级别等比缩放
+- 偏移量基于 `currentScale` 查表获取固定值（tactical: 80px, battle: 64px, strategic: 48px）
 
 #### Scenario: 三个部队在同一地名
 
@@ -67,26 +67,26 @@
 - **WHEN** 两个部队关联到同一地名
 - **THEN** 一个旗帜向北偏移半个间距，另一个向南偏移半个间距，视觉上以锚点坐标为中心对称分布
 
-### Requirement: Scale 级别自适应旗帜
+### Requirement: Scale 级别自适应参数
 
-系统 SHALL 根据当前地图 scale 级别调整旗帜渲染尺寸，确保在不同缩放级别下都清晰可读。
+系统 SHALL 根据当前战役 scale 级别（tactical/battle/strategic）调整旗帜和箭头的固定渲染尺寸。
 
 级别映射 MUST：
-- **strategic** (zoom ≤ 8)：方向线长度 = 数据对角线 × 3%
-- **battle** (zoom 8-12)：方向线长度 = 数据对角线 × 8%
-- **tactical** (zoom ≥ 12)：方向线长度 = 数据对角线 × 20%
+- **strategic**：flagSize = 48px, arrowLineW = 3px, labelFontSize = 11px
+- **battle**：flagSize = 64px, arrowLineW = 4px, labelFontSize = 12px
+- **tactical**：flagSize = 80px, arrowLineW = 6px, labelFontSize = 13px
 
-所有级别下旗帜图标通过 `icon-size` zoom step 表达式自适应缩放。
+所有级别下旗帜图标使用固定 `icon-size: 0.78`，文字大小使用 MapLibre 固定值（古地名 13px、今地名 12px、部队标签 14px）。
 
-#### Scenario: strategic 级别下方向线随数据范围缩小
+#### Scenario: strategic 级别下旗帜和箭头较小
 
-- **WHEN** 地图 zoom 为 6，scale 为 strategic，数据范围 500km
-- **THEN** 方向线按对角线 3% 计算（约 15km），在宏观视图中保持克制尺寸
+- **WHEN** scale 为 strategic
+- **THEN** 旗帜 48px，箭头线宽 3px，文字 11px，在宏观视图中保持克制尺寸
 
-#### Scenario: tactical 级别下方向线在局部战场突出
+#### Scenario: tactical 级别下旗帜和箭头放大
 
-- **WHEN** 地图 zoom 为 14，scale 为 tactical，数据范围 5km
-- **THEN** 方向线按对角线 20% 计算（约 1km），清晰展示部队位置和进攻方向
+- **WHEN** scale 为 tactical
+- **THEN** 旗帜 80px，箭头线宽 6px，文字 13px，清晰展示局部战场细节
 
 ### Requirement: 部队状态卡片
 

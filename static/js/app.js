@@ -27,9 +27,6 @@ function switchToInputMode() {
   document.body.classList.remove('mode-view');
   document.getElementById('map-guide').classList.remove('hidden');
   document.getElementById('error-msg-input').style.display = 'none';
-  if (_lastExtractData) {
-    map.flyTo({ center: [112, 33], zoom: 5 });
-  }
 }
 
 // ── 多截图批量处理 ──

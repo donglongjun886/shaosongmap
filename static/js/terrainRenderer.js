@@ -70,49 +70,49 @@
     return roughGen;
   }
 
-  // ── 缩放自适应参数 ──
-  function _zoomAdjusted(zoom, preset) {
+  // ── scale 自适应参数（替代 zoom 分档） ──
+  var SCALE_LOD = {
+    tactical:  { hachureMult: 1.0, weightMult: 1.0, strokeMult: 1.0, metersPerPx: 8 },
+    battle:    { hachureMult: 2.0, weightMult: 0.6, strokeMult: 0.7, metersPerPx: 40 },
+    strategic: { hachureMult: 0,   weightMult: 0.3, strokeMult: 0,   metersPerPx: 150 }
+  };
+
+  function _scaleAdjusted(scale, preset) {
+    var lod = SCALE_LOD[scale] || SCALE_LOD.battle;
     var adjusted = Object.assign({}, preset);
-    if (zoom >= 14) {
-      // tactical: 完整细节
-      adjusted.hachureGap = preset.hachureGap || 5;
-      adjusted.fillWeight = preset.fillWeight || 0.8;
-    } else if (zoom >= 10) {
-      // battle: 简化
-      adjusted.hachureGap = (preset.hachureGap || 5) * 2;
-      adjusted.fillWeight = (preset.fillWeight || 0.5) * 0.6;
-      adjusted.strokeWidth = (preset.strokeWidth || 0.5) * 0.7;
-    } else {
-      // strategic: 仅色块
+    if (scale === 'strategic') {
       adjusted.fillStyle = 'solid';
       adjusted.fillWeight = 0.3;
       adjusted.strokeWidth = 0;
-      adjusted.hachureGap = 20;
+    } else {
+      adjusted.hachureGap = (preset.hachureGap || 5) * lod.hachureMult;
+      adjusted.fillWeight = (preset.fillWeight || 0.5) * lod.weightMult;
+      adjusted.strokeWidth = (preset.strokeWidth || 0.5) * lod.strokeMult;
     }
+    adjusted._metersPerPx = lod.metersPerPx;
     return adjusted;
   }
 
   // ── 渲染单个地形特征 ──
-  function _renderFeature(ctx, feature, zoom) {
+  function _renderFeature(ctx, feature, scale) {
     var type = feature.type || 'flat';
     var preset = TERRAIN_PRESETS[type];
     if (!preset) return;
 
-    var adjusted = _zoomAdjusted(zoom, preset);
+    var adjusted = _scaleAdjusted(scale, preset);
     var gen = _getGen();
     if (!gen) return;
 
-    // 计算屏幕尺寸
+    // 计算屏幕尺寸（使用 scale 对应的固定 metersPerPx）
     var radiusKm = feature.radius_km || 1;
-    var metersPerPx = 156543 * Math.cos((feature.center[1] || 33) * Math.PI / 180) / Math.pow(2, zoom);
-    var radiusPx = Math.max((radiusKm * 1000) / metersPerPx, 30);
+    var radiusPx = Math.max((radiusKm * 1000) / adjusted._metersPerPx, 30);
 
     var project = feature._projected; // 由调用方预计算
     if (!project) return;
     var cx = project.x;
     var cy = project.y;
 
-    var cacheKey = type + '@' + Math.round(radiusPx / 10) * 10 + '@' + Math.round(zoom);
+    var cacheKey = type + '@' + Math.round(radiusPx / 10) * 10 + '@' + scale;
     var seed = _hash32str(cacheKey);
 
     ctx.save();
@@ -232,15 +232,15 @@
   }
 
   // ── 公开 API ──
-  function render(ctx, features, map) {
+  function render(ctx, features, map, scale) {
     if (!features || !features.length || !map) return;
-    var zoom = map.getZoom();
+    var s = scale || 'battle';
 
     features.forEach(function (f) {
       var coords = f.center || (f.geometry && f.geometry.coordinates);
       if (!coords) return;
       f._projected = map.project(coords);
-      _renderFeature(ctx, f, zoom);
+      _renderFeature(ctx, f, s);
     });
   }
 

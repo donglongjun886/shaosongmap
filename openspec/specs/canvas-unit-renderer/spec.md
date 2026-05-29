@@ -10,9 +10,9 @@ Canvas 2D 三层覆盖层（terrainCanvas / routeCanvas / unitCanvas）替代 Ma
 
 系统 SHALL 在 MapLibre 地图容器上创建三个透明 Canvas 覆盖层，按 z-index 分层：
 
-- `terrainCanvas`（z-index: 10）：静态地形色块，仅在 zoom 跨 0.5 档时重绘
-- `routeCanvas`（z-index: 20）：路线和地名，仅在时间轴步骤切换时重绘
-- `unitCanvas`（z-index: 30）：兵牌和箭头，rAF 持续渲染
+- `terrainCanvas`（z-index: 10）：静态地形色块，setData 时渲染并离屏缓存，后续通过 `drawImage` 贴入
+- `routeCanvas`（z-index: 20）：路线和地名，setData + 时间轴步骤切换时重绘
+- `unitCanvas`（z-index: 30）：兵牌和箭头，setData + 时间轴步骤切换时重绘
 
 Canvas MUST：
 - position 为 absolute，top/left 为 0，width/height 与 MapLibre 容器同步
@@ -135,11 +135,6 @@ rAF 每帧（热路径）：
 - **WHEN** 部队无 direction 字段或 direction 为 null
 - **THEN** 仅渲染兵牌卡片，不绘制箭头
 
-#### Scenario: 交战状态箭头加粗
-
-- **WHEN** 部队状态为 engaging
-- **THEN** 箭头线宽增至 18px，描边增至 2px，颜色使用亮红 `#e63946`
-
 ### Requirement: 同坐标多部队像素偏移
 
 系统 SHALL 在多个部队关联同一地点时，在 Canvas 像素空间沿南北方向错位排列兵牌，确保不重叠。
@@ -176,23 +171,23 @@ rAF 每帧（热路径）：
 
 ### Requirement: 渲染性能
 
-系统 SHALL 确保 Canvas 渲染在标准硬件上保持 60fps，不影响地图交互流畅度。
+系统 SHALL 确保 Canvas 渲染不影响地图交互流畅度。
 
 性能约束 MUST：
-- 使用 `requestAnimationFrame` 驱动渲染循环
-- 使用脏标记（dirty flag）跳过无变化的帧
+- 使用事件驱动渲染（setData / setTimeline / resize 时触发），不使用 rAF 持续渲染
+- terrain 层渲染结果缓存到离屏 Canvas，后续帧通过 `drawImage` 贴入
 - 仅绘制屏幕可视范围内的元素
 - 单帧绘制耗时 < 5ms（10 个兵牌以内）
 
 #### Scenario: 地图静止时零绘制开销
 
-- **WHEN** 地图静止（无 move/zoom/数据更新）
-- **THEN** rAF 循环仅执行脏标记检查（< 0.1ms），不触发 Canvas 重绘
+- **WHEN** 地图静止（无数据更新 / 无时间轴切换 / 无 resize）
+- **THEN** 不触发任何 Canvas 重绘
 
-#### Scenario: 缩放时流畅渲染
+#### Scenario: 时间轴切换时局部重绘
 
-- **WHEN** 用户快速缩放地图
-- **THEN** 每帧兵牌重绘耗时 < 5ms，视觉上无抖动或卡顿
+- **WHEN** 用户切换时间轴步骤
+- **THEN** 仅重绘 routeCanvas 和 unitCanvas，terrain 层使用缓存的离屏 Canvas 贴图
 
 ### Requirement: 状态动画
 
@@ -200,7 +195,6 @@ rAF 每帧（热路径）：
 
 动画类型 MUST：
 - **进军** (advancing)：箭头从兵牌位置生长动画（600ms，箭尾→箭尖逐步绘制）
-- **交战** (engaging)：兵牌边框颜色渐变为亮红 + 脉冲效果（3 次，每次 200ms）
 - **崩溃** (routing)：兵牌 opacity 在 3 个步骤内从 1.0 递减到 0，箭头碎裂为散点
 
 #### Scenario: 部队首次出现生长动画

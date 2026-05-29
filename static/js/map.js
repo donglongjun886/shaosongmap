@@ -15,7 +15,12 @@ try {
     center: [112, 33],
     zoom: 5,
     maxPitch: 0,
-    maxBearing: 0
+    maxBearing: 0,
+    dragPan: false,
+    scrollZoom: false,
+    doubleClickZoom: false,
+    touchZoomRotate: false,
+    boxZoom: false
   });
 } catch (e) {
   console.error('[map] 地图初始化失败，请检查网络或 CDN 连通性:', e.message);
@@ -67,6 +72,7 @@ function applyBasemap(name) {
 if (map) map.on('load', () => {
   console.log('[map.onload] map loaded, applying basemap and registering icons');
   applyBasemap('schematic');
+  map.on('idle', _collectPlaceBounds); // 必须在 CanvasRenderer.init 之前注册
   CanvasRenderer.init(map);
 
   // 加载古风 SVG 图标（game-icons.net 原版路径, 仅改色）
@@ -90,22 +96,22 @@ if (map) map.on('load', () => {
   map.addLayer({
     id: 'places-chgis', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'source'], 'chgis'],
-    layout: { 'icon-image': 'fortress', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true }
+    layout: { 'icon-image': 'fortress', 'icon-size': 0.78, 'icon-allow-overlap': true }
   });
   map.addLayer({
     id: 'places-llm', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'source'], 'llm_infer'],
-    layout: { 'icon-image': 'camp', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true }
+    layout: { 'icon-image': 'camp', 'icon-size': 0.78, 'icon-allow-overlap': true }
   });
   map.addLayer({
     id: 'place-labels-ancient', type: 'symbol', source: 'places',
-    layout: { 'text-field': ['get', 'name'], 'text-offset': [0, 1.5], 'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 15], 'visibility': 'visible' },
+    layout: { 'text-field': ['get', 'name'], 'text-offset': [0, 1.5], 'text-size': 13, 'visibility': 'visible' },
     paint: { 'text-color': '#2c2c2c', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
   map.addLayer({
     id: 'place-labels-modern', type: 'symbol', source: 'places',
     filter: ['!=', ['get', 'modern_name'], ''],
-    layout: { 'text-field': ['get', 'modern_name'], 'text-offset': [0, 2.8], 'text-size': ['step', ['zoom'], 9, 5, 11, 8, 13, 12, 15], 'visibility': 'visible' },
+    layout: { 'text-field': ['get', 'modern_name'], 'text-offset': [0, 2.8], 'text-size': 13, 'visibility': 'visible' },
     paint: { 'text-color': '#8b7355', 'text-halo-color': '#fff', 'text-halo-width': 2 }
   });
   map.addLayer({
@@ -129,7 +135,7 @@ if (map) map.on('load', () => {
         'engaging', 'banner-engaging',
         ['match', ['get', 'faction'], '宋', 'banner-song', '金', 'banner-jin', 'banner-song']
       ],
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0],
+      'icon-size': 0.78,
       'icon-allow-overlap': true,
       'icon-ignore-placement': true
     }
@@ -139,7 +145,7 @@ if (map) map.on('load', () => {
     layout: {
       'text-field': ['get', 'unit_name'],
       'text-offset': [0, 1.5],
-      'text-size': ['step', ['zoom'], 10, 5, 12, 8, 14, 12, 16],
+      'text-size': 14,
       'text-anchor': 'top',
       'text-allow-overlap': true,
       'text-ignore-placement': true,
@@ -172,13 +178,13 @@ if (map) map.on('load', () => {
   map.addLayer({
     id: 'places-chgis-dim', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    layout: { 'icon-image': 'fortress', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true },
+    layout: { 'icon-image': 'fortress', 'icon-size': 0.78, 'icon-allow-overlap': true },
     paint: { 'icon-opacity': 0.4 }
   });
   map.addLayer({
     id: 'places-llm-dim', type: 'symbol', source: 'places',
     filter: ['==', ['get', 'step'], -1],
-    layout: { 'icon-image': 'camp', 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.55, 10, 0.78, 14, 1.0], 'icon-allow-overlap': true },
+    layout: { 'icon-image': 'camp', 'icon-size': 0.78, 'icon-allow-overlap': true },
     paint: { 'icon-opacity': 0.4 }
   });
 
@@ -192,7 +198,6 @@ if (map) map.on('load', () => {
   map.on('mouseenter', 'unit-banner-icon', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'unit-banner-icon', () => { map.getCanvas().style.cursor = ''; });
   console.log('[map.onload] icons, sources, layers all registered');
-  map.on('idle', _collectPlaceBounds);
 });
 
 // ── SVG 图标加载 ──
@@ -484,17 +489,15 @@ function updateMap(data) {
   // 非 tactical 模式下 MapLibre unit-banners layers 正常渲染
   _applyComicRouteStyle(data.scale);
   _applyComicLabelHalo(data.scale);
-  // CanvasRenderer 已通过 setData 更新数据，markDirty 触发重绘
-  CanvasRenderer.markDirty('unit');
   console.log('[updateMap] fitBounds starting');
 
   if (placeFeatures.length > 0) {
     const bounds = new maplibregl.LngLatBounds();
     placeFeatures.forEach(f => { if (f.geometry?.coordinates) bounds.extend(f.geometry.coordinates); });
     routeFeatures.forEach(f => { if (f.geometry?.coordinates) f.geometry.coordinates.forEach(c => bounds.extend(c)); });
-    const zoomMap = { tactical: 14, battle: 10, strategic: 6 };
+    const zoomMap = { tactical: 14, battle: 12, strategic: 10 };
     const maxZoom = zoomMap[data.scale] || 10;
-    map.fitBounds(bounds, { padding: 60, maxZoom: maxZoom });
+    map.fitBounds(bounds, { padding: 60, maxZoom: maxZoom, animate: false });
   }
   applyTimelineFilters();
   } catch(e) {
@@ -563,10 +566,8 @@ var _placeBoundsCache = [];
 function _collectPlaceBounds() {
   if (!map) return;
   _placeBoundsCache = [];
-  var zoom = map.getZoom();
-  var iconScale = _interpolateIconSize(zoom);
-  var iconPx = 128 * iconScale;
-  var fontSize = Math.round(10 + (zoom - 6) * 0.5); // 标签字号 lerp: zoom6→10, zoom14→14
+  var iconPx = 128 * 0.78;
+  var fontSize = 12;
 
   try {
     var placesSource = map.getSource('places');
@@ -575,7 +576,6 @@ function _collectPlaceBounds() {
     if (!data || !data.features) return;
     var features = data.features;
 
-    // 创建离屏 canvas 用于 measureText
     var measureCtx = document.createElement('canvas').getContext('2d');
     measureCtx.font = fontSize + 'px "Noto Serif SC", "SimSun", serif';
 
@@ -597,12 +597,6 @@ function _collectPlaceBounds() {
   } catch (e) {
     // source 不存在时静默
   }
-}
-
-function _interpolateIconSize(zoom) {
-  // 复现 MapLibre interpolate: zoom 6→0.55, 10→0.78, 14→1.0
-  var z = Math.max(6, Math.min(14, zoom));
-  return 0.55 + (z - 6) * (1.0 - 0.55) / (14 - 6);
 }
 
 // 暴露给 CanvasRenderer

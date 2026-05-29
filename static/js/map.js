@@ -449,11 +449,14 @@ function updateMap(data) {
 
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
-  // 所有 scale 下均使用 CanvasRenderer 替代 MapLibre 部队渲染
+  // 所有 scale 下均使用 CanvasRenderer 替代 MapLibre 部队/路线渲染
   _safeLayout('unit-banner-icon', 'visibility', 'none');
   _safeLayout('unit-banner-label', 'visibility', 'none');
   _safeLayout('unit-direction-line', 'visibility', 'none');
   _safeLayout('unit-direction-arrow', 'visibility', 'none');
+  _safeLayout('route-lines', 'visibility', 'none');
+  _safeLayout('route-arrows', 'visibility', 'none');
+  _safeLayout('route-anchors', 'visibility', 'none');
   var anchorFeatures = [];
   routeFeatures.forEach(function(f) {
     var coords = f.geometry && f.geometry.coordinates;

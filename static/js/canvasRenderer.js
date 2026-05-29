@@ -183,27 +183,40 @@
 
     ctx.save();
     ctx.globalAlpha = alpha;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    // 箭身：roughjs 手绘线段
+    // 计算头部几何
     var headHalfW = lw * THEME.arrowHeadRatio / 2;
     var headLen = Math.min(headHalfW * 0.75, len * 0.3);
     var bodyLen = len - headLen;
     var bodyX = x1 + Math.cos(angle) * bodyLen;
     var bodyY = y1 + Math.sin(angle) * bodyLen;
-    roughCanvas.line(x1, y1, bodyX, bodyY, {
-      stroke: col, strokeWidth: lw,
-      roughness: THEME.arrowRoughness, bowing: THEME.arrowBowing, seed: seedBase
-    });
 
-    // 箭头头：roughjs 两条线段组成 V 形（Excalidraw 方式）
+    // 共用 roughjs 选项（Excalidraw generateRoughOptions）
+    var options = {
+      stroke: col, strokeWidth: lw, seed: seedBase,
+      roughness: THEME.arrowRoughness, bowing: THEME.arrowBowing,
+      fillWeight: lw / 2, hachureGap: lw * 4,
+      preserveVertices: THEME.arrowRoughness < 2
+    };
+
+    // 箭身：generator.linearPath → rc.draw
+    if (roughGen) {
+      roughCanvas.draw(roughGen.linearPath([[x1, y1], [bodyX, bodyY]], options));
+    }
+
+    // 箭头头：generator.line × 2 → rc.draw（Excalidraw getArrowheadShapes arrow 分支）
     var perpX = -Math.sin(angle);
     var perpY = Math.cos(angle);
-    var headOptions = {
-      stroke: col, strokeWidth: lw,
-      roughness: Math.min(1, THEME.arrowRoughness), bowing: THEME.arrowBowing, seed: seedBase
+    var headOpts = {
+      stroke: col, strokeWidth: lw, seed: seedBase,
+      roughness: Math.min(1, THEME.arrowRoughness), bowing: THEME.arrowBowing
     };
-    roughCanvas.line(bodyX + perpX * headHalfW, bodyY + perpY * headHalfW, x2, y2, headOptions);
-    roughCanvas.line(bodyX - perpX * headHalfW, bodyY - perpY * headHalfW, x2, y2, headOptions);
+    if (roughGen) {
+      roughCanvas.draw(roughGen.line(bodyX + perpX * headHalfW, bodyY + perpY * headHalfW, x2, y2, headOpts));
+      roughCanvas.draw(roughGen.line(bodyX - perpX * headHalfW, bodyY - perpY * headHalfW, x2, y2, headOpts));
+    }
 
     ctx.restore();
   }

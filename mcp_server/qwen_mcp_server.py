@@ -387,6 +387,58 @@ def review_design(design_text: str, context: str = '') -> str:
         return _business_error(f'Qwen3.7-Max API 调用失败: {exc}')
 
 
+@mcp.tool()
+@_transient_retry
+def review_snippet(code_snippet: str, question: str = '') -> str:
+    """审查指定代码片段，排查 bug 或逻辑问题。调用 Qwen3.7-Max 文本模型。
+
+    与 review_code（基于 git diff 全量审查）不同，本工具接收任意代码片段 +
+    问题描述，做针对性深度分析。
+
+    Args:
+        code_snippet: 需要审查的代码片段（函数、文件片段等）
+        question: 具体排查方向，如「箭头起点计算为什么偏了」「这段逻辑有死循环吗」
+
+    Returns:
+        审查意见：问题列表、根因分析、修复建议
+    """
+    system_prompt = (
+        '你是一位资深前端/全栈工程师，精通 JavaScript、Canvas 2D、Python。'
+        '你的职责是审查用户提供的代码片段，定位 bug 和逻辑问题。\n\n'
+        '审查原则：\n'
+        '1. 聚焦用户提出的问题，给出根因分析和具体修复建议\n'
+        '2. 问题分级：🔴 致命（会导致崩溃/白屏）| 🟡 严重（功能异常）| 🟢 建议（质量提升）\n'
+        '3. 如果代码没有明显问题但现象对不上，指出排查方向和数据流断点\n'
+        '4. 修复建议要给出具体代码改动，不要笼统描述\n'
+        '5. 用中文输出，简洁直接\n\n'
+        '输出格式：\n'
+        '## 根因分析\n（问题的根本原因）\n\n'
+        '## 问题列表\n- 🔴/🟡/🟢 问题描述 + 修复建议\n\n'
+        '## 修复代码\n（关键改动片段，diff 格式）'
+    )
+
+    user_parts = [f'请审查以下代码片段：\n\n```\n{code_snippet}\n```']
+    if question:
+        user_parts.append(f'\n排查方向：{question}')
+
+    try:
+        client = _get_qwen_client()
+        resp = client.chat.completions.create(
+            model='qwen3.7-max',
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': '\n'.join(user_parts)},
+            ],
+            max_tokens=4000,
+            temperature=0.3,
+        )
+        content = resp.choices[0].message.content
+        return content.strip() if content else '(模型返回空)'
+    except Exception as exc:
+        logger.error('review_snippet API 失败: %s', exc)
+        return _business_error(f'Qwen3.7-Max API 调用失败: {exc}')
+
+
 # ── 全局异常兜底 + 资源清理 ──────────────────────────────
 _playwright_contexts: list = []
 

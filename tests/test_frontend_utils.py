@@ -249,7 +249,7 @@ class TestFrontendFileSplit:
         assert 'href="css/map.css"' in resp.text
 
     def test_js_loads_in_correct_order(self):
-        """JS 按 utils → canvasRenderer → terrainRenderer → map → app 顺序加载。"""
+        """JS 按 utils → canvasRenderer → terrainRenderer → tacticalRenderer → map → app 顺序加载。"""
         resp = _client.get('/')
         scripts = re.findall(r'<script src="([^"]+)"', resp.text)
         # 过滤出本地 JS（非 CDN）
@@ -258,6 +258,7 @@ class TestFrontendFileSplit:
             'js/utils.js',
             'js/canvasRenderer.js',
             'js/terrainRenderer.js',
+            'js/tacticalRenderer.js',
             'js/map.js',
             'js/app.js',
         ]

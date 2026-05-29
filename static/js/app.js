@@ -26,6 +26,12 @@ function switchToInputMode() {
   document.body.classList.remove('mode-view');
   document.getElementById('map-guide').classList.remove('hidden');
   document.getElementById('error-msg-input').style.display = 'none';
+  // 清理 Tactical Canvas
+  if (_tacticalInited && window.TacticalRenderer) {
+    window.TacticalRenderer.destroy();
+    _tacticalInited = false;
+  }
+  _currentScale = null;
 }
 
 // ── 多截图批量处理 ──
@@ -220,6 +226,7 @@ let _events = [];
 let _units = [];
 let _unitStates = [];
 let _activeAbortController = null;
+let _currentScale = null;  // 当前地图 scale，用于渲染器分叉
 
 function _abortPrevious() {
   if (_activeAbortController) {
@@ -227,6 +234,29 @@ function _abortPrevious() {
     _activeAbortController = null;
   }
 }
+
+// ── Tactical 渲染器辅助 ──
+function _renderTactical(data) {
+  var wrap = document.querySelector('.map-wrap');
+  if (!wrap) return;
+  if (!window.TacticalRenderer) {
+    console.error('[Tactical] TacticalRenderer 未加载');
+    return;
+  }
+  // 首次调用时初始化
+  if (!_tacticalInited) {
+    window.TacticalRenderer.init(wrap);
+    _tacticalInited = true;
+  }
+  window.TacticalRenderer.setData(data);
+}
+
+function _tacticalTimeline(step, total) {
+  if (window.TacticalRenderer) {
+    window.TacticalRenderer.setTimeline(step, total);
+  }
+}
+var _tacticalInited = false;
 
 // ── 通用 error & 分阶段进度条 ──
 function showError(msg) {
@@ -332,6 +362,7 @@ function handleSSEEvent(type, data) {
     setStageState('render', 'done');
     _lastExtractData = data;
     _dataModified = false;
+    _currentScale = data.scale || null;
     const scaleLabels = { tactical: '⚔️ 战术级 (1-10km)', battle: '🏴 战役级 (20-200km)', strategic: '🗺️ 战略级 (200-1000km)' };
     document.getElementById('scale-indicator').textContent = scaleLabels[data.scale] || '';
     if (data.events && data.events.length > 0) {
@@ -353,8 +384,13 @@ function handleSSEEvent(type, data) {
     }
     renderEditableResult(data);
     switchToViewMode();
-    updateMap(data);
-    applyTimelineFilters();
+    // 按 scale 分叉渲染器
+    if (data.scale === 'tactical') {
+      _renderTactical(data);
+    } else {
+      updateMap(data);
+      applyTimelineFilters();
+    }
   }
 }
 
@@ -492,12 +528,17 @@ async function reRender() {
     const result = await resp.json();
     _lastExtractData = result;
     _dataModified = false;
+    _currentScale = result.scale || null;
     _events = [];
     totalSteps = 0;
     document.getElementById('timeline-wrap').classList.remove('active');
-    _applyComicTheme(result.scale);
-    _renderSeal(result.campaign_name);
-    updateMap(result);
+    if (result.scale === 'tactical') {
+      _renderTactical(result);
+    } else {
+      _applyComicTheme(result.scale);
+      _renderSeal(result.campaign_name);
+      updateMap(result);
+    }
     btn.textContent = '✓ 已更新';
     setTimeout(() => { btn.textContent = '🔄 重新渲染'; }, 1500);
   } catch (e) {
@@ -524,7 +565,11 @@ document.addEventListener('keydown', (e) => {
 function stepTo(step) {
   if (step < 1 || step > totalSteps) return;
   currentStep = step;
-  applyTimelineFilters();
+  if (_currentScale === 'tactical') {
+    _tacticalTimeline(currentStep, totalSteps);
+  } else {
+    applyTimelineFilters();
+  }
   renderEventCard(currentStep);
   renderUnitStateCard(currentStep);
   updateTimelineBar();

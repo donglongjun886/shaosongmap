@@ -449,24 +449,11 @@ function updateMap(data) {
 
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
-  // unit-banners 和 unit-directions MapLibre layers 在 tactical 模式下由 CanvasRenderer 替代
-  // 非 tactical 模式下仍使用 MapLibre layers（兼容）
-  var hideMapLibreUnits = (data.scale === 'tactical');
-  if (map.getSource('unit-banners')) {
-    if (hideMapLibreUnits) {
-      _safeLayout('unit-banner-icon', 'visibility', 'none');
-      _safeLayout('unit-banner-label', 'visibility', 'none');
-      _safeLayout('unit-direction-line', 'visibility', 'none');
-      _safeLayout('unit-direction-arrow', 'visibility', 'none');
-    } else {
-      map.getSource('unit-banners').setData({ type: 'FeatureCollection', features: unitBannerFeatures });
-      map.getSource('unit-directions').setData({ type: 'FeatureCollection', features: unitDirectionFeatures });
-      _safeLayout('unit-banner-icon', 'visibility', 'visible');
-      _safeLayout('unit-banner-label', 'visibility', 'visible');
-      _safeLayout('unit-direction-line', 'visibility', 'visible');
-      _safeLayout('unit-direction-arrow', 'visibility', 'visible');
-    }
-  }
+  // 所有 scale 下均使用 CanvasRenderer 替代 MapLibre 部队渲染
+  _safeLayout('unit-banner-icon', 'visibility', 'none');
+  _safeLayout('unit-banner-label', 'visibility', 'none');
+  _safeLayout('unit-direction-line', 'visibility', 'none');
+  _safeLayout('unit-direction-arrow', 'visibility', 'none');
   var anchorFeatures = [];
   routeFeatures.forEach(function(f) {
     var coords = f.geometry && f.geometry.coordinates;

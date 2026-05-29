@@ -532,7 +532,7 @@
   }
 
   // ── 公开 API ──
-  function setData(unitBannerFeatures, unitDirectionFeatures, terrainFeats, scale) {
+  function setData(unitBannerFeatures, unitDirectionFeatures, placeFeatures, scale) {
     unitFeatures = unitBannerFeatures || [];
     // 构建 targetLookup: name → {lng, lat} 地理坐标（O(1) 渲染时查询）
     targetLookup = {};
@@ -541,20 +541,14 @@
       var coords = f.geometry && f.geometry.coordinates;
       if (name && coords && coords.length >= 2) targetLookup[name] = { lng: coords[0], lat: coords[1] };
     });
-    // 从 places source 补充地名坐标
-    try {
-      var placesSrc = map && map.getSource && map.getSource('places');
-      if (placesSrc) {
-        var pData = placesSrc._data;
-        if (pData && pData.features) {
-          pData.features.forEach(function (f) {
-            var name = (f.properties && f.properties.name) || '';
-            var coords = f.geometry && f.geometry.coordinates;
-            if (name && coords && coords.length >= 2) targetLookup[name] = { lng: coords[0], lat: coords[1] };
-          });
-        }
-      }
-    } catch (e) { /* ignore */ }
+    // 从 places 数据补充地名坐标
+    if (placeFeatures) {
+      placeFeatures.forEach(function (f) {
+        var name = (f.properties && f.properties.name) || '';
+        var coords = f.geometry && f.geometry.coordinates;
+        if (name && coords && coords.length >= 2) targetLookup[name] = { lng: coords[0], lat: coords[1] };
+      });
+    }
 
     // 合并方向信息
     if (unitDirectionFeatures && unitDirectionFeatures.length) {
@@ -570,7 +564,7 @@
         if (dirMap[key]) props.direction = dirMap[key];
       });
     }
-    terrainFeatures = terrainFeats || [];
+    terrainFeatures = [];
     currentScale = scale || 'battle';
     dirty.unit = true;
     dirty.route = true;
@@ -624,6 +618,7 @@
     markDirty: markDirty,
     resize: resize,
     destroy: destroy,
+    getUnitFeatures: function () { return unitFeatures; },
     THEME: THEME
   };
 })();

@@ -440,7 +440,7 @@ function updateMap(data) {
     'banners:', unitBannerFeatures.length, 'directions:', unitDirectionFeatures.length);
 
   // CanvasRenderer 接管部队渲染（像素空间偏移，替代旧的地理偏移方案）
-  CanvasRenderer.setData(unitBannerFeatures, unitDirectionFeatures, [], data.scale);
+  CanvasRenderer.setData(unitBannerFeatures, unitDirectionFeatures, placeFeatures, data.scale);
 
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });

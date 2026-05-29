@@ -23,6 +23,7 @@ def make_unit_banner_features(
     seq: int,
     description: str,
     scale: str | None,
+    direction_target: str | None = None,
 ) -> list[dict]:
     """为部队生成汉代《驻军图》风格旗帜标记 GeoJSON 特征。
 
@@ -39,6 +40,7 @@ def make_unit_banner_features(
         'step': seq,
         'description': description,
         'direction': direction_name,
+        'direction_target': direction_target or None,
         'scale': scale,
     }
 
@@ -175,6 +177,7 @@ def make_unit_geojson(
                 current_seq,
                 us.description,
                 scale,
+                getattr(us, 'direction_target', None),
             )
             for f in feat_list:
                 f['properties']['_slot'] = _slot

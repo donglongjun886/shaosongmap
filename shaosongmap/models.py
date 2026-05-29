@@ -107,6 +107,10 @@ class UnitState(BaseModel):
         default=None,
         description='当前步骤的进攻方向，覆盖 ForceUnit 的默认方向',
     )
+    direction_target: str | None = Field(
+        default=None,
+        description='攻击目标地名或部队名，必须是 places 或 units 中已有名称；无明确目标时为 null',
+    )
     description: str = Field(default='', description='一句话中文描述，概括该部队在此步骤的战术动作')
 
 

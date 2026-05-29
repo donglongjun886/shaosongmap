@@ -107,19 +107,22 @@ def _screenshot(url: str, text: str, output: str) -> tuple[list[str], list[str],
                 // 1. 时间轴信息（从 JS 全局变量读取）
                 result.totalSteps = (typeof totalSteps !== 'undefined') ? totalSteps : 0;
                 result.currentStep = (typeof currentStep !== 'undefined') ? currentStep : 0;
-                // 2. 地图中的部队标记数量（从 unit-banners 源读取）
+                // 2. 地图中的部队标记数量（优先 CanvasRenderer，降级 MapLibre source）
                 try {
-                    var src = map.getSource('unit-banners');
-                    if (src && src._data && src._data.features) {
-                        var features = src._data.features;
-                        var unitNames = features.map(function(f) { return f.properties.unit_name; });
-                        var uniqueUnits = [...new Set(unitNames)].sort();
-                        result.unitBannerCount = features.length;
-                        result.uniqueUnits = uniqueUnits;
+                    var unitNames = [];
+                    // CanvasRenderer 接管了 tactical/battle 模式下的部队渲染
+                    if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer.getUnitFeatures) {
+                        var feats = CanvasRenderer.getUnitFeatures();
+                        unitNames = feats.map(function(f) { return (f.properties && f.properties.unit_name) || ''; }).filter(Boolean);
                     } else {
-                        result.unitBannerCount = 0;
-                        result.uniqueUnits = [];
+                        var src = map.getSource('unit-banners');
+                        if (src && src._data && src._data.features) {
+                            unitNames = src._data.features.map(function(f) { return f.properties.unit_name; });
+                        }
                     }
+                    var uniqueUnits = [...new Set(unitNames)].sort();
+                    result.unitBannerCount = unitNames.length;
+                    result.uniqueUnits = uniqueUnits;
                 } catch(e) {
                     result.mapError = e.message;
                 }

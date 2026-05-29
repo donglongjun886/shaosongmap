@@ -8,13 +8,23 @@
 - 绝不修改未被明确提及的文件，每次只做最小化修改。
 - **所有设计细节必须先确认再动手**——包括但不限于：参数取值、算法选型、尺寸/颜色/间距等视觉参数、seed/缓存/分桶等策略。除非是绝对确定的标准做法（如语法修复、docstring），否则必须先讨论再写代码。
 
-### Git 提交前检查清单
+### Git 提交前检查清单（严格按顺序执行，不可跳过）
 
-每次 `git commit` 前**必须**完成：
-1. `review_code` — 异源审查（DeepSeek-reasoner），修复所有 🔴 严重问题
-2. `uv run ruff format . && uv run ruff check . --fix` — 格式化+lint
-3. `uv run mypy app.py shaosongmap/` — 类型检查
-4. `PYTHONPATH=. uv run pytest tests/ -v --cov=shaosongmap` — 全量测试通过
+提交流程**必须**按以下步骤执行，每步完成后才能进入下一步：
+
+```
+git add <files>                         # 1. 暂存
+review_code                             # 2. 异源审查，修复 🔴 严重问题
+uv run ruff format . && ruff check .    # 3. 格式化+lint
+uv run mypy app.py shaosongmap/         # 4. 类型检查
+PYTHONPATH=. uv run pytest tests/ -v    # 5. 全量测试
+git commit -m "..." && git push         # 6. 提交推送
+```
+
+**关键约束**：
+- `review_code` 必须在 `git add` **之后**执行，确保变更已被暂存、可被工具检测
+- 任何一步失败都必须修复后重新从该步开始，不得跳过
+- 不得在未完成全部步骤的情况下执行 `git commit`
 
 审查发现的问题分级处理：
 - 🔴 严重：必须立即修复再提交

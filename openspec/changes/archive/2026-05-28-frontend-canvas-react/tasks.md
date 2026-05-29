@@ -36,7 +36,6 @@
 ## 5. P0: 状态动画（简化版）
 
 - [x] 5.1 实现部队首次出现生长动画：通过 `globalAlpha` 渐变 + arrow 精灵变换
-- [x] 5.2 实现交战状态脉冲效果：`shadowBlur` + 亮红 `#e63946` 发光
 - [x] 5.3 实现溃散碎裂效果：opacity 递减（retreating 0.5, routing 0.3）
 
 ## 6. P0: MapLibre 事件集成

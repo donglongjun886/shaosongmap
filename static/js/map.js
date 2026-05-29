@@ -45,7 +45,6 @@ const SCALE_DEFAULT_BASEMAP = { tactical: 'schematic', battle: 'muted_osm', stra
 let basemapMode = 'auto';
 
 function applyBasemap(name) {
-  console.log('[applyBasemap] switching to:', name);
   const provider = BASEMAP[name];
   if (!provider) return;
   const style = map.getStyle();
@@ -70,9 +69,8 @@ function applyBasemap(name) {
 }
 
 if (map) map.on('load', () => {
-  console.log('[map.onload] map loaded, applying basemap and registering icons');
   applyBasemap('schematic');
-  map.on('idle', _collectPlaceBounds); // 必须在 CanvasRenderer.init 之前注册
+  // 必须在 CanvasRenderer.init 之前注册
   CanvasRenderer.init(map);
 
   // 加载古风 SVG 图标（game-icons.net 原版路径, 仅改色）
@@ -197,7 +195,6 @@ if (map) map.on('load', () => {
   map.on('click', 'unit-banner-icon', (e) => showUnitPopup(e));
   map.on('mouseenter', 'unit-banner-icon', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'unit-banner-icon', () => { map.getCanvas().style.cursor = ''; });
-  console.log('[map.onload] icons, sources, layers all registered');
 });
 
 // ── SVG 图标加载 ──
@@ -213,7 +210,6 @@ function _loadSvgIcon(name, path, mapInstance, dim) {
     }
     ctx.drawImage(img, 0, 0, 128, 128);
     mapInstance.addImage(name, ctx.getImageData(0, 0, 128, 128), { pixelRatio: 2 });
-    console.log('[icon] loaded ' + name + (dim ? ' (dim)' : '') + ' from ' + path);
   };
   img.onerror = function() {
     console.warn('[icon] failed to load ' + path + ', using fallback');
@@ -431,7 +427,6 @@ function _applyComicLabelHalo(scale) {
 function updateMap(data) {
   if (!map) { console.warn('[updateMap] map not initialized, skipping'); return; }
   try {
-  console.log('[updateMap] called, geojson features:', data.geojson?.features?.length, 'scale:', data.scale);
   const geojsonFeatures = data.geojson.features || [];
   const placeFeatures = geojsonFeatures.filter(f =>
     f.geometry.type === 'Point' && f.properties?._feature_type !== 'unit_banner');
@@ -441,10 +436,7 @@ function updateMap(data) {
     f.properties?._feature_type === 'unit_banner');
   const unitDirectionFeatures = geojsonFeatures.filter(f =>
     f.properties?._feature_type === 'unit_direction');
-  console.log('[updateMap] places:', placeFeatures.length, 'routes:', routeFeatures.length,
-    'banners:', unitBannerFeatures.length, 'directions:', unitDirectionFeatures.length);
-
-  // CanvasRenderer 接管部队渲染（像素空间偏移，替代旧的地理偏移方案）
+  // CanvasRenderer 接管部队渲染
   CanvasRenderer.setData(unitBannerFeatures, unitDirectionFeatures, placeFeatures, data.scale);
 
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
@@ -466,11 +458,8 @@ function updateMap(data) {
     }
   });
   map.getSource('route-anchors').setData({ type: 'FeatureCollection', features: anchorFeatures });
-  console.log('[updateMap] basemapMode:', basemapMode, 'scale:', data.scale);
   if (basemapMode === 'auto' && data.scale) {
-    console.log('[updateMap] calling applyBasemap for:', SCALE_DEFAULT_BASEMAP[data.scale]);
     applyBasemap(SCALE_DEFAULT_BASEMAP[data.scale] || 'schematic');
-    console.log('[updateMap] applyBasemap done');
   }
   _applyComicTheme(data.scale);
   _renderSeal(data.campaign_name);
@@ -479,8 +468,6 @@ function updateMap(data) {
   // 非 tactical 模式下 MapLibre unit-banners layers 正常渲染
   _applyComicRouteStyle(data.scale);
   _applyComicLabelHalo(data.scale);
-  console.log('[updateMap] fitBounds starting');
-
   if (placeFeatures.length > 0) {
     const bounds = new maplibregl.LngLatBounds();
     placeFeatures.forEach(f => { if (f.geometry?.coordinates) bounds.extend(f.geometry.coordinates); });
@@ -549,48 +536,6 @@ function toggleUnitLayers(visible) {
   _safeLayout('comic-unit-icon', 'visibility', v);
   _safeLayout('comic-unit-label', 'visibility', v);
 }
-
-// ── 碰撞避让：收集地名屏幕像素边界盒（idle 事件触发） ──
-var _placeBoundsCache = [];
-
-function _collectPlaceBounds() {
-  if (!map) return;
-  _placeBoundsCache = [];
-  var iconPx = 128 * 0.78;
-  var fontSize = 12;
-
-  try {
-    var placesSource = map.getSource('places');
-    if (!placesSource) return;
-    var data = placesSource._data;
-    if (!data || !data.features) return;
-    var features = data.features;
-
-    var measureCtx = document.createElement('canvas').getContext('2d');
-    measureCtx.font = fontSize + 'px "Noto Serif SC", "SimSun", serif';
-
-    features.forEach(function (f) {
-      if (f.geometry && f.geometry.coordinates) {
-        var pt = map.project(f.geometry.coordinates);
-        var name = (f.properties && f.properties.name) || '';
-        var textW = measureCtx.measureText(name).width;
-        var aabbW = Math.max(iconPx, textW) + 8;
-        var aabbH = iconPx + 20;
-        _placeBoundsCache.push({
-          x: pt.x - aabbW / 2,
-          y: pt.y - aabbH + 4,
-          w: aabbW,
-          h: aabbH
-        });
-      }
-    });
-  } catch (e) {
-    // source 不存在时静默
-  }
-}
-
-// 暴露给 CanvasRenderer
-function getPlaceBounds() { return _placeBoundsCache; }
 
 function showUnitPopup(e) {
   var props = e.features[0].properties;

@@ -17,7 +17,6 @@ window.addEventListener('unhandledrejection', function(e) {
 
 // ── 模式切换 ──
 function switchToViewMode() {
-  console.log('[switchToViewMode] called, adding mode-view to body');
   document.body.classList.add('mode-view');
   document.getElementById('map-guide').classList.add('hidden');
   document.getElementById('error-msg-view').style.display = 'none';
@@ -147,7 +146,7 @@ async function startBatchOCR() {
     const decoder = new TextDecoder();
     let buffer = '';
     while (true) {
-      if (controller.signal.aborted) { console.log('[batchOCR] aborted'); return; }
+      if (controller.signal.aborted) { return; }
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -262,7 +261,6 @@ function setStageState(stage, state) {
 async function analyze() {
   const text = document.getElementById('text-input').value.trim();
   if (!text) { showError('请输入战役文本或上传截图'); return; }
-  console.log('[analyze] starting, text length:', text.length);
   const submitBtn = document.getElementById('submit-btn');
   submitBtn.disabled = true;
   document.getElementById('error-msg-input').style.display = 'none';
@@ -287,7 +285,7 @@ async function analyze() {
     const decoder = new TextDecoder();
     let buffer = '';
     while (true) {
-      if (controller.signal.aborted) { console.log('[analyze] aborted'); return; }
+      if (controller.signal.aborted) { return; }
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -331,8 +329,6 @@ function handleSSEEvent(type, data) {
     setStageState(stage, 'error');
     showError(data.message || '处理失败');
   } else if (type === 'result') {
-    console.log('[SSE] result received, data keys:', Object.keys(data));
-    console.log('[SSE] features count:', data.features?.length, 'geojson features:', data.geojson?.features?.length, 'scale:', data.scale);
     setStageState('render', 'done');
     _lastExtractData = data;
     _dataModified = false;
@@ -364,7 +360,6 @@ function handleSSEEvent(type, data) {
 
 // ── 可编辑结果面板 ──
 function renderEditableResult(data) {
-  console.log('[renderEditableResult] called, campaign:', data.campaign_name);
   const renderBtn = document.getElementById('render-btn');
   renderBtn.disabled = true;
   renderBtn.classList.remove('active');

@@ -76,11 +76,6 @@
     return px > -m && px < w + m && py > -m && py < h + m;
   }
 
-  // ── smoothstep easing ──
-  function _smoothstep(t) {
-    return t * t * (3 - 2 * t);
-  }
-
   // ── scale 参数查表（替代 zoom lerp） ──
   function _scaleParams(scale) {
     switch (scale) {
@@ -127,7 +122,6 @@
         pending--;
         if (pending === 0) {
           bannerLoaded = true;
-          console.log('[CanvasRenderer] banner icons all loaded');
         }
       };
       img.onerror = function () {
@@ -227,7 +221,6 @@
 
     if (!unitFeatures.length) return;
 
-    var now = performance.now();
     var sp = _scaleParams(currentScale);
     var flagSize = sp.flagSize;
     var arrowLineW = sp.arrowLineW;
@@ -249,21 +242,7 @@
 
       var props = f.properties || {};
 
-      // 碰撞偏移 smoothstep 动画
-      var targetOff = f._targetOffsetY !== undefined ? f._targetOffsetY : 0;
-      if (f._animStartTime !== undefined) {
-        var dt = Math.min(now - f._animStartTime, 50); // deltaTime 上限防切后台跳跃
-        if (dt >= 180) {
-          f._currentOffsetY = targetOff;
-        } else {
-          var t = _smoothstep(dt / 180);
-          f._currentOffsetY = f._animStartY + (targetOff - f._animStartY) * t;
-        }
-      } else {
-        f._currentOffsetY = targetOff;
-      }
-
-      var drawY = pt.y + (f._currentOffsetY || 0);
+      var drawY = pt.y;
 
       var faction = props.faction || '';
       var unitName = props.unit_name || '';
@@ -277,11 +256,11 @@
         var tgt = targetLookup[targetName];
         var endPt = map.project([tgt.lng, tgt.lat]);
         if (endPt && isFinite(endPt.x) && isFinite(endPt.y)) {
-          // 方向：从部队原始地理坐标（slot偏移前）指向目标
+          // 方向：从部队地理坐标指向目标
           var dir = Math.atan2(endPt.y - pt.y, endPt.x - pt.x);
-          // 起点从地理坐标沿方向前移半图标，脱离原地标
-          var startX = pt.x + 25 * Math.cos(dir);
-          var startY = pt.y + 25 * Math.sin(dir);
+          // 起点沿方向前移 25px（地点图标半高），脱离原地标
+          var startX = pt.x + 0 * Math.cos(dir);
+          var startY = pt.y + 0 * Math.sin(dir);
           // 终点回退，避免燕尾覆盖目标地名图标
           var headMargin = flagSize * 0.5 + arrowLineW * 4;
           var endX = endPt.x - headMargin * Math.cos(dir);
@@ -352,88 +331,8 @@
   function _onMapIdle() {
     if (!map || destroyed) return;
     if (_needsRender) {
-      _recalcOffsets();
       _renderAll();
     }
-  }
-
-  // ── 碰撞避让（idle 时计算 targetOffsetY） ──
-  function _recalcOffsets() {
-    if (!unitFeatures.length) return;
-    var placeBounds = typeof getPlaceBounds === 'function' ? getPlaceBounds() : [];
-    var screenH = layers.unit ? parseInt(layers.unit.style.height) : 600;
-    if (!screenH || screenH < 10) screenH = 600;
-    var sp = _scaleParams(currentScale);
-    var flagSize = sp.flagSize;
-    var stepPx = flagSize + 4;
-    var drawnRects = []; // 重置每轮碰撞计算
-    var now = performance.now();
-
-    // 按优先级排序：engaging > marching > deploying > retreating > routing
-    var sorted = unitFeatures.slice().sort(function (a, b) {
-      var order = { engaging: 0, marching: 1, deploying: 2, retreating: 3, routing: 4 };
-      var sa = order[(a.properties && a.properties.status) || 'marching'] || 2;
-      var sb = order[(b.properties && b.properties.status) || 'marching'] || 2;
-      return sa - sb;
-    });
-
-    sorted.forEach(function (f) {
-      if (totalSteps > 0) {
-        var step = f.properties && f.properties.step;
-        if (step !== undefined && step !== currentStep) return;
-      }
-      var coords = f.geometry && f.geometry.coordinates;
-      if (!coords || coords.length < 2) return;
-
-      var pt = map.project(coords);
-      if (!pt || isNaN(pt.x) || isNaN(pt.y)) return;
-
-      var origY = pt.y;
-      var direction = -1; // 向北优先
-      var offset = 0;
-      var bestY = origY;
-
-      for (var attempt = 0; attempt < 3; attempt++) {
-        var tryY = origY + offset * direction;
-        var fRect = { x: pt.x - flagSize / 2, y: tryY - flagSize, w: flagSize, h: flagSize };
-
-        var collides = false;
-        for (var i = 0; i < placeBounds.length; i++) {
-          if (_aabbOverlap(fRect, placeBounds[i])) { collides = true; break; }
-        }
-        if (!collides) {
-          for (var j = 0; j < drawnRects.length; j++) {
-            if (_aabbOverlap(fRect, drawnRects[j])) { collides = true; break; }
-          }
-        }
-
-        if (!collides) { bestY = tryY; break; }
-
-        offset += stepPx;
-        if (tryY - flagSize < 0 && direction === -1) {
-          direction = 1;
-          offset = stepPx;
-          continue;
-        }
-        if (tryY + flagSize > screenH && direction === 1) {
-          offset = 0;
-          bestY = origY;
-          break;
-        }
-      }
-
-      drawnRects.push({ x: pt.x - flagSize / 2, y: bestY - flagSize, w: flagSize, h: flagSize });
-
-      // 动画过渡
-      var prevOffset = f._currentOffsetY !== undefined ? f._currentOffsetY : 0;
-      f._targetOffsetY = bestY - origY;
-      f._animStartY = prevOffset;
-      f._animStartTime = now;
-    });
-  }
-
-  function _aabbOverlap(a, b) {
-    return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
   }
 
   // ── MapLibre 事件处理 ──
@@ -466,7 +365,6 @@
     // 防抖 150ms 后重绘
     clearTimeout(_resizeDebounceTimer);
     _resizeDebounceTimer = setTimeout(function () {
-      _recalcOffsets();
       _renderAll();
     }, 150);
   }

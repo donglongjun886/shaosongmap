@@ -279,20 +279,14 @@
         if (endPt && isFinite(endPt.x) && isFinite(endPt.y)) {
           // 方向：从部队原始地理坐标（slot偏移前）指向目标
           var dir = Math.atan2(endPt.y - pt.y, endPt.x - pt.x);
-          // 起点沿箭头方向前移，脱离地点图标（128 / 2dpr * 0.78 ≈ 50px，半高 25px）
-          var startX = pt.x + 0 * Math.cos(dir);
-          var startY = pt.y + 0 * Math.sin(dir);
+          // 起点从地理坐标沿方向前移半图标，脱离原地标
+          var startX = pt.x + 25 * Math.cos(dir);
+          var startY = pt.y + 25 * Math.sin(dir);
           // 终点回退，避免燕尾覆盖目标地名图标
           var headMargin = flagSize * 0.5 + arrowLineW * 4;
           var endX = endPt.x - headMargin * Math.cos(dir);
           var endY = endPt.y - headMargin * Math.sin(dir);
           var arrowLen = Math.hypot(endX - startX, endY - startY);
-          console.log('[arrow]', unitName, '| geoPt:', pt.x.toFixed(1)+','+pt.y.toFixed(1),
-            '| flagSize:', flagSize, '| drawY:', drawY.toFixed(1),
-            '| tail:', startX.toFixed(1)+','+startY.toFixed(1),
-            '| head:', endX.toFixed(1)+','+endY.toFixed(1),
-            '| tgtPt:', endPt.x.toFixed(1)+','+endPt.y.toFixed(1),
-            '| len:', arrowLen.toFixed(1));
           if (arrowLen >= 30) {
             if (!_isOnScreen(endX, endY, 0)) {
               var clip = _clipToScreen(startX, startY, endX, endY);

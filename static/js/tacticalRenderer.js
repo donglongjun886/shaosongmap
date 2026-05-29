@@ -492,6 +492,7 @@
   }
 
   function setData(data) {
+    if (!canvas) { console.warn('[TacticalRenderer] setData 在 init 之前调用，跳过'); return; }
     geojsonData = data;
     totalSteps = data.total_steps || data.events ? (data.events || []).length : 0;
     currentStep = totalSteps > 0 ? 1 : 0;  // 有时间轴时默认显示第一步

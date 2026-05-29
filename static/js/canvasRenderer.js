@@ -183,39 +183,35 @@
 
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
 
-    // 计算头部几何
-    var headHalfW = lw * THEME.arrowHeadRatio / 2;
-    var headLen = Math.min(headHalfW * 0.75, len * 0.3);
-    var bodyLen = len - headLen;
-    var bodyX = x1 + Math.cos(angle) * bodyLen;
-    var bodyY = y1 + Math.sin(angle) * bodyLen;
+    // 燕尾分叉几何：箭身直达终点，分叉向后张开
+    var forkLength = lw * 4;
+    var forkAngle = Math.PI / 5;  // 36° 张开角
+    var backAngle = angle + Math.PI;
 
-    // 共用 roughjs 选项（Excalidraw generateRoughOptions）
-    var options = {
+    // 箭身选项
+    var bodyOpts = {
       stroke: col, strokeWidth: lw, seed: seedBase,
-      roughness: THEME.arrowRoughness, bowing: THEME.arrowBowing,
+      roughness: THEME.arrowRoughness,
       fillWeight: lw / 2, hachureGap: lw * 4,
       preserveVertices: THEME.arrowRoughness < 2
     };
 
-    // 箭身：generator.linearPath → rc.draw
+    // 箭身：直达终点（燕尾式，body 贯穿到 to）
     if (roughGen) {
-      roughCanvas.draw(roughGen.linearPath([[x1, y1], [bodyX, bodyY]], options));
+      roughCanvas.draw(roughGen.linearPath([[x1, y1], [x2, y2]], bodyOpts));
     }
 
-    // 箭头头：generator.line × 2 → rc.draw（Excalidraw getArrowheadShapes arrow 分支）
-    var perpX = -Math.sin(angle);
-    var perpY = Math.cos(angle);
+    // 燕尾分叉：从终点向后张开两条线
     var headOpts = {
       stroke: col, strokeWidth: lw, seed: seedBase,
-      roughness: Math.min(1, THEME.arrowRoughness), bowing: THEME.arrowBowing
+      roughness: Math.min(1, THEME.arrowRoughness)
     };
     if (roughGen) {
-      roughCanvas.draw(roughGen.line(bodyX + perpX * headHalfW, bodyY + perpY * headHalfW, x2, y2, headOpts));
-      roughCanvas.draw(roughGen.line(bodyX - perpX * headHalfW, bodyY - perpY * headHalfW, x2, y2, headOpts));
+      var leftEnd = { x: x2 + forkLength * Math.cos(backAngle + forkAngle), y: y2 + forkLength * Math.sin(backAngle + forkAngle) };
+      var rightEnd = { x: x2 + forkLength * Math.cos(backAngle - forkAngle), y: y2 + forkLength * Math.sin(backAngle - forkAngle) };
+      roughCanvas.draw(roughGen.line(x2, y2, leftEnd.x, leftEnd.y, headOpts));
+      roughCanvas.draw(roughGen.line(x2, y2, rightEnd.x, rightEnd.y, headOpts));
     }
 
     ctx.restore();
@@ -285,16 +281,19 @@
         var endPt = map.project([tgt.lng, tgt.lat]);
         if (endPt && isFinite(endPt.x) && isFinite(endPt.y)) {
           var startX = pt.x;
-          var startY = drawY - flagSize / 2;
-          var arrowLen = Math.hypot(endPt.x - startX, endPt.y - startY);
-          if (arrowLen >= 40) {
-            var edgeX = endPt.x;
-            var edgeY = endPt.y;
-            if (!_isOnScreen(endPt.x, endPt.y, 0)) {
-              var clip = _clipToScreen(startX, startY, endPt.x, endPt.y);
-              if (clip) { edgeX = clip.x; edgeY = clip.y; }
+          var startY = drawY + flagSize / 4;
+          // 终点回退，避免燕尾覆盖目标地名图标
+          var headMargin = flagSize * 0.5 + arrowLineW * 4;
+          var endDir = Math.atan2(endPt.y - startY, endPt.x - startX);
+          var endX = endPt.x - headMargin * Math.cos(endDir);
+          var endY = endPt.y - headMargin * Math.sin(endDir);
+          var arrowLen = Math.hypot(endX - startX, endY - startY);
+          if (arrowLen >= 30) {
+            if (!_isOnScreen(endX, endY, 0)) {
+              var clip = _clipToScreen(startX, startY, endX, endY);
+              if (clip) { endX = clip.x; endY = clip.y; }
             }
-            _drawArrow(ctx, startX, startY, edgeX, edgeY, _factionColor(faction), status, arrowLineW, props._arrowSeed);
+            _drawArrow(ctx, startX, startY, endX, endY, _factionColor(faction), status, arrowLineW, props._arrowSeed);
           }
         }
       }
@@ -480,7 +479,7 @@
     dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     if (typeof rough !== 'undefined') {
-      roughGen = rough.generator({ options: { roughness: THEME.defaultRoughness, bowing: THEME.defaultBowing } });
+      roughGen = rough.generator();
     }
 
     var container = map.getCanvasContainer();

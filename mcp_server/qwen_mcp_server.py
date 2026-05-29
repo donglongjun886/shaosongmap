@@ -117,7 +117,11 @@ def _prepare_image(path: Path, max_edge: int = 1280, quality: int = 75) -> tuple
 
 # ── 错误处理 ──────────────────────────────────────────────
 def _transient_retry(func, max_retries: int = 1):
-    """透明重试装饰器：502/超时等瞬态错误自动重试 1 次。"""
+    """透明重试装饰器：502/超时等瞬态错误自动重试 1 次。
+
+    重试耗尽后返回 _business_error 而非抛出异常，确保 MCP 工具始终返回字符串。
+    被装饰函数不应自行捕获 API 异常——让异常穿透到装饰器触发重试。
+    """
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -133,8 +137,10 @@ def _transient_retry(func, max_retries: int = 1):
                 )
                 if not is_transient or attempt >= max_retries:
                     break
+                logger.warning('瞬态错误重试 %d/%d: %s', attempt + 1, max_retries, exc)
                 time.sleep(1.5 * (attempt + 1))
-        raise last_exc  # type: ignore[misc]
+        logger.error('%s 调用失败（已重试 %d 次）: %s', func.__name__, max_retries, last_exc)
+        return _business_error(f'{func.__name__} 调用失败: {last_exc}')
 
     return wrapper
 
@@ -211,27 +217,23 @@ def analyze_ui(image_path: str, question: str = '') -> str:
         '以及任何明显的视觉问题（如元素重叠、文字截断、错位、报错信息等）。'
     )
 
-    try:
-        client = _get_qwen_client()
-        resp = client.chat.completions.create(
-            model='qwen-vl-max',
-            messages=[
-                {
-                    'role': 'user',
-                    'content': [
-                        {'type': 'image_url', 'image_url': {'url': data_url}},
-                        {'type': 'text', 'text': question or default_prompt},
-                    ],
-                }
-            ],
-            max_tokens=2000,
-            temperature=0.3,
-        )
-        content = resp.choices[0].message.content
-        return content.strip() if content else '(模型返回空)'
-    except Exception as exc:
-        logger.error('analyze_ui API 失败: %s', exc)
-        return _business_error(f'Qwen-VL API 调用失败: {exc}')
+    client = _get_qwen_client()
+    resp = client.chat.completions.create(
+        model='qwen-vl-max',
+        messages=[
+            {
+                'role': 'user',
+                'content': [
+                    {'type': 'image_url', 'image_url': {'url': data_url}},
+                    {'type': 'text', 'text': question or default_prompt},
+                ],
+            }
+        ],
+        max_tokens=2000,
+        temperature=0.3,
+    )
+    content = resp.choices[0].message.content
+    return content.strip() if content else '(模型返回空)'
 
 
 @mcp.tool()
@@ -369,22 +371,18 @@ def review_design(design_text: str, context: str = '') -> str:
     if context:
         user_parts.append(f'\n\n项目背景/补充上下文：\n{context}')
 
-    try:
-        client = _get_qwen_client()
-        resp = client.chat.completions.create(
-            model='qwen3.7-max',
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': '\n'.join(user_parts)},
-            ],
-            max_tokens=4000,
-            temperature=0.3,
-        )
-        content = resp.choices[0].message.content
-        return content.strip() if content else '(模型返回空)'
-    except Exception as exc:
-        logger.error('review_design API 失败: %s', exc)
-        return _business_error(f'Qwen3.7-Max API 调用失败: {exc}')
+    client = _get_qwen_client()
+    resp = client.chat.completions.create(
+        model='qwen3.7-max',
+        messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': '\n'.join(user_parts)},
+        ],
+        max_tokens=4000,
+        temperature=0.3,
+    )
+    content = resp.choices[0].message.content
+    return content.strip() if content else '(模型返回空)'
 
 
 @mcp.tool()
@@ -421,22 +419,18 @@ def review_snippet(code_snippet: str, question: str = '') -> str:
     if question:
         user_parts.append(f'\n排查方向：{question}')
 
-    try:
-        client = _get_qwen_client()
-        resp = client.chat.completions.create(
-            model='qwen3.7-max',
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': '\n'.join(user_parts)},
-            ],
-            max_tokens=4000,
-            temperature=0.3,
-        )
-        content = resp.choices[0].message.content
-        return content.strip() if content else '(模型返回空)'
-    except Exception as exc:
-        logger.error('review_snippet API 失败: %s', exc)
-        return _business_error(f'Qwen3.7-Max API 调用失败: {exc}')
+    client = _get_qwen_client()
+    resp = client.chat.completions.create(
+        model='qwen3.7-max',
+        messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': '\n'.join(user_parts)},
+        ],
+        max_tokens=4000,
+        temperature=0.3,
+    )
+    content = resp.choices[0].message.content
+    return content.strip() if content else '(模型返回空)'
 
 
 # ── 全局异常兜底 + 资源清理 ──────────────────────────────

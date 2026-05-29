@@ -1,8 +1,7 @@
-"""services/unit_banner.py 单元测试：部队旗帜标记、_slot 槽位分配、GeoJSON 生成。"""
+"""services/unit_banner.py 单元测试：部队旗帜标记、GeoJSON 生成。"""
 
 from shaosongmap.models import ForceUnit, GeoFeature, UnitState
 from shaosongmap.services.unit_banner import (
-    _assign_slots,
     make_unit_banner_features,
     make_unit_geojson,
 )
@@ -73,45 +72,6 @@ class TestMakeUnitBannerFeatures:
         assert props['description'] == '撤退'
 
 
-class TestAssignSlots:
-    def test_single_unit_slot_zero(self):
-        coord_map = {'汴京': [114.0, 34.0]}
-        effective = {
-            '中军': UnitState(seq=1, unit_name='中军', status='deploying', location='汴京')
-        }
-        slots = _assign_slots(effective, coord_map)
-        assert slots == {'中军': 0}
-
-    def test_multiple_units_same_location_sorted_by_name(self):
-        coord_map = {'汴京': [114.0, 34.0]}
-        effective = {
-            '右军': UnitState(seq=1, unit_name='右军', status='deploying', location='汴京'),
-            '左军': UnitState(seq=1, unit_name='左军', status='deploying', location='汴京'),
-            '中军': UnitState(seq=1, unit_name='中军', status='deploying', location='汴京'),
-        }
-        slots = _assign_slots(effective, coord_map)
-        assert len(slots) == 3
-        # 三个部队按名称字母序分配唯一 slot（0/1/2 各不同）
-        assert set(slots.values()) == {0, 1, 2}
-
-    def test_units_at_different_locations_each_slot_zero(self):
-        coord_map = {'汴京': [114.0, 34.0], '襄阳': [112.0, 32.0]}
-        effective = {
-            '左军': UnitState(seq=1, unit_name='左军', status='deploying', location='汴京'),
-            '右军': UnitState(seq=1, unit_name='右军', status='deploying', location='襄阳'),
-        }
-        slots = _assign_slots(effective, coord_map)
-        assert slots == {'左军': 0, '右军': 0}
-
-    def test_missing_location_skipped(self):
-        coord_map = {'汴京': [114.0, 34.0]}
-        effective = {
-            '中军': UnitState(seq=1, unit_name='中军', status='deploying', location=None),
-        }
-        slots = _assign_slots(effective, coord_map)
-        assert slots == {}
-
-
 class TestMakeUnitGeojson:
     def test_empty_unit_states(self):
         result = make_unit_geojson([], [], [], None)
@@ -126,8 +86,6 @@ class TestMakeUnitGeojson:
         point = [f for f in result if f['geometry']['type'] == 'Point']
         assert len(point) == 1
         assert point[0]['properties']['unit_name'] == '中军'
-        assert point[0]['properties']['_slot'] == 0
-        # 坐标保留真实值（无偏移）
         assert point[0]['geometry']['coordinates'] == [114.0, 34.0]
 
     def test_unit_progresses_through_steps(self):
@@ -184,44 +142,3 @@ class TestMakeUnitGeojson:
         assert len(lines) >= 1
         coords = lines[0]['geometry']['coordinates']
         assert coords[1][1] > coords[0][1]  # 终点纬度 > 起点
-
-    def test_slot_assigned_for_multiple_units_same_location(self):
-        units = [
-            ForceUnit(name='左军', faction='宋军'),
-            ForceUnit(name='右军', faction='宋军'),
-        ]
-        states = [
-            UnitState(seq=1, unit_name='左军', status='deploying', location='汴京'),
-            UnitState(seq=1, unit_name='右军', status='deploying', location='汴京'),
-        ]
-        features = [GeoFeature(name='汴京', lng=114.0, lat=34.0)]
-        result = make_unit_geojson(units, states, features, 'battle')
-        points = [f for f in result if f['geometry']['type'] == 'Point']
-        assert len(points) == 2
-        # 同坐标部队分配不同 _slot
-        slots = {p['properties']['unit_name']: p['properties']['_slot'] for p in points}
-        assert slots['左军'] != slots['右军']
-        assert set(slots.values()) == {0, 1}
-        # 坐标均为真实值（无偏移）
-        for p in points:
-            assert p['geometry']['coordinates'] == [114.0, 34.0]
-
-    def test_slot_present_on_direction_features(self):
-        units = [
-            ForceUnit(name='左军', faction='宋军'),
-            ForceUnit(name='右军', faction='宋军'),
-        ]
-        states = [
-            UnitState(seq=1, unit_name='左军', status='marching', location='汴京', direction='东'),
-            UnitState(seq=1, unit_name='右军', status='marching', location='汴京', direction='北'),
-        ]
-        features = [GeoFeature(name='汴京', lng=114.0, lat=34.0)]
-        result = make_unit_geojson(units, states, features, 'battle')
-        lines = [f for f in result if f['geometry']['type'] == 'LineString']
-        assert len(lines) == 2
-        # 方向线也带有 _slot
-        for line in lines:
-            assert '_slot' in line['properties']
-        # 方向线起点为真实坐标
-        for line in lines:
-            assert line['geometry']['coordinates'][0] == [114.0, 34.0]

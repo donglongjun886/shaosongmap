@@ -71,29 +71,6 @@ def make_unit_banner_features(
     return features
 
 
-def _assign_slots(
-    effective: dict[str, UnitState],
-    coord_map: dict[str, list[float]],
-) -> dict[str, int]:
-    """按坐标分组部队，每组内按名称字母序分配 _slot 序号。
-
-    Returns:
-        映射: unit_name → _slot (0/1/2/...)
-    """
-    coord_units: dict[tuple[float, float], list[str]] = defaultdict(list)
-    for unit_name, us in effective.items():
-        if us.location and us.location in coord_map:
-            raw = coord_map[us.location]
-            coord = (raw[0], raw[1])
-            coord_units[coord].append(unit_name)
-
-    slot_map: dict[str, int] = {}
-    for _coord, unit_names in coord_units.items():
-        for i, uname in enumerate(sorted(unit_names)):
-            slot_map[uname] = i
-    return slot_map
-
-
 def make_unit_geojson(
     units: list[ForceUnit],
     unit_states: list[UnitState],
@@ -150,9 +127,6 @@ def make_unit_geojson(
             if us.unit_name not in effective or us.seq > effective[us.unit_name].seq:
                 effective[us.unit_name] = us
 
-        # 本步骤内同坐标部队分配 _slot
-        slot_map = _assign_slots(effective, coord_map)
-
         for unit_name, us in effective.items():
             unit = unit_map.get(unit_name)
             location = us.location
@@ -160,7 +134,6 @@ def make_unit_geojson(
                 continue
 
             base = coord_map[location]
-            _slot = slot_map.get(unit_name, 0)
 
             direction = us.direction or (unit.direction if unit else None)
             angle = angle_for_direction(direction) if direction else None
@@ -179,9 +152,6 @@ def make_unit_geojson(
                 scale,
                 getattr(us, 'direction_target', None),
             )
-            for f in feat_list:
-                f['properties']['_slot'] = _slot
-
             geojson_features.extend(feat_list)
 
     logger.info('部队 GeoJSON 完成: %d 要素', len(geojson_features))

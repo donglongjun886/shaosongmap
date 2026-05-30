@@ -448,7 +448,7 @@
   // ── 公开 API ──
 
   function init(mapWrapEl) {
-    if (destroyed) return;
+    destroyed = false;
     container = mapWrapEl;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
 

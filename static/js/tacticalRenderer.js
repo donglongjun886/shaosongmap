@@ -294,6 +294,18 @@
 
     // TODO: 2. 地形装饰（后续实现）
 
+    // 非时间轴模式：暂不支持
+    if (totalSteps === 0) {
+      ctx.save();
+      ctx.font = '20px "Noto Serif SC", "SimSun", serif';
+      ctx.fillStyle = '#999';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('暂不支持非时间轴模式，请勾选「时间轴模式」后重试', w / 2, h / 2);
+      ctx.restore();
+      return;
+    }
+
     var data = geojsonData;
     var features = data.features || [];
     var geojson = data.geojson;

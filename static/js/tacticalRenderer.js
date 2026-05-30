@@ -1,7 +1,7 @@
 // ShaosongMap Tactical 纯 Canvas 渲染器
 // Tactical 级（几十公里范围）专用：数据驱动视口，单 Canvas 绘制，无 MapLibre 依赖
 // 依赖：roughjs（全局 rough）
-// TODO: _drawArrow/_drawFlag/_factionColor/_loadBannerImages 后续抽到 renderUtils.js 共享
+// TODO: _drawArrow/_drawUnitCard/_factionColor 后续抽到 renderUtils.js 共享
 
 (function () {
   'use strict';
@@ -9,16 +9,27 @@
   // ── THEME 配置 ──
   // TODO: 后续从共享 renderUtils.js 导入
   var THEME = {
-    factionSong: '#2b4c7e',
-    factionJin: '#8b4513',
+    factionSong: '#d31721',
+    factionJin: '#3d588f',
     factionUnknown: '#2c2c2c',
-    flagSize: 80,
-    arrowLineW: 6,
-    labelFontSize: 13,
-    arrowRoughness: 2,
+    arrowLineW: 5,
+    arrowRoughness: 1.8,
+    arrowForkMult: 3.5,    // 分叉长度 = 线宽 × 此值
+    arrowForkAngleDeg: 22,  // 分叉张开角度
     paperBg: '#f2e8d5',
     padding: 60,
-    circularRadius: 30  // 多点环形分布半径(px)
+    circularRadius: 45,
+    // 兵牌手绘卡片参数
+    cardW: 80,
+    cardH: 32,
+    cardColorBarW: 11,
+    cardRoughness: 1.4,
+    cardFont: 'bold 12px "Noto Serif SC", "SimSun", serif',
+    cardSubFont: '10px "Noto Serif SC", "SimSun", serif',
+    // 地点标记参数
+    placeTriSize: 11,
+    placeDotRadius: 7,
+    placeLabelFont: '15px "Noto Serif SC", "SimSun", serif'
   };
 
   // ── 内部状态 ──
@@ -54,34 +65,6 @@
     if (faction.indexOf('宋') >= 0) return THEME.factionSong;
     if (faction.indexOf('金') >= 0) return THEME.factionJin;
     return THEME.factionUnknown;
-  }
-
-  // ── 旗帜图标加载 ──
-  // TODO: 后续从共享 renderUtils.js 导入
-  var bannerImages = {};
-  var bannerLoaded = false;
-
-  function _loadBannerImages() {
-    var icons = {
-      'song': 'assets/icons/banner-song.svg',
-      'jin': 'assets/icons/banner-jin.svg',
-      'engaging': 'assets/icons/banner-engaging.svg',
-      'unknown': 'assets/icons/banner-jin.svg'
-    };
-    var pending = Object.keys(icons).length;
-    Object.keys(icons).forEach(function (key) {
-      var img = new Image();
-      img.onload = function () {
-        bannerImages[key] = img;
-        pending--;
-        if (pending === 0) { bannerLoaded = true; }
-      };
-      img.onerror = function () {
-        pending--;
-        console.warn('[TacticalRenderer] 旗帜图标加载失败: ' + icons[key]);
-      };
-      img.src = icons[key];
-    });
   }
 
   // ── 1. 收集所有数据点经纬度 ──
@@ -195,29 +178,50 @@
     };
   }
 
-  // ── 旗帜绘制 ──
-  // TODO: 后续从共享 renderUtils.js 导入
-  function _drawFlag(px, py, faction, unitName) {
-    if (!bannerLoaded) return;
-    var fk = 'unknown';
-    if (!faction) fk = 'unknown';
-    else if (faction.indexOf('宋') >= 0) fk = 'song';
-    else if (faction.indexOf('金') >= 0) fk = 'jin';
+  // ── 部队兵牌绘制（roughjs 手绘矩形卡片，替代 SVG 图标） ──
+  function _drawUnitCard(px, py, faction, unitName, troopCount) {
+    if (!roughGen || !roughCanvas) return;
+    var col = _factionColor(faction);
+    var cw = THEME.cardW;
+    var ch = THEME.cardH;
+    var bw = THEME.cardColorBarW;
+    var seed = _hash32('card-' + (unitName || 'x'));
 
-    var img = bannerImages[fk];
-    if (!img) return;
-    var s = THEME.flagSize;
-    ctx.drawImage(img, px - s / 2, py - s, s, s);
+    var left = px - cw / 2;
+    var top = py - ch;
 
+    // 卡片背景（米白底矩形）
+    var bodyOpts = {
+      fill: '#faf6ed', stroke: col, strokeWidth: 1.5,
+      fillStyle: 'solid', seed: seed,
+      roughness: THEME.cardRoughness
+    };
+    roughCanvas.draw(roughGen.rectangle(left, top, cw, ch, bodyOpts));
+
+    // 左侧阵营色条（左移2px覆盖卡片左边框，避免视觉加粗）
+    var barOpts = { fill: col, fillStyle: 'solid', roughness: 0.5, seed: seed + 1 };
+    roughCanvas.draw(roughGen.rectangle(left - 2, top, bw + 2, ch, barOpts));
+
+    // 文字在色条右侧区域内上下左右居中
+    var textX = left + bw + (cw - bw) / 2;
     if (unitName) {
       ctx.save();
-      ctx.font = 'bold ' + THEME.labelFontSize + 'px "Noto Serif SC", "SimSun", serif';
+      ctx.font = THEME.cardFont;
       ctx.fillStyle = THEME.factionUnknown;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.shadowColor = '#f2e8d5';
-      ctx.shadowBlur = 3;
-      ctx.fillText(unitName, px, py + 4);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(unitName, textX, top + ch / 2 - 4);
+      ctx.restore();
+    }
+
+    // 兵数（名称下方小字）
+    if (troopCount) {
+      ctx.save();
+      ctx.font = THEME.cardSubFont;
+      ctx.fillStyle = '#666';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(troopCount, textX, top + ch / 2 + 10);
       ctx.restore();
     }
   }
@@ -242,8 +246,8 @@
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    var forkLength = lw * 4;
-    var forkAngle = Math.PI / 5;
+    var forkLength = lw * THEME.arrowForkMult;
+    var forkAngle = THEME.arrowForkAngleDeg * Math.PI / 180;
     var backAngle = angle + Math.PI;
 
     var bodyOpts = {
@@ -327,24 +331,25 @@
       var isCity = f.source === 'chgis';
       if (isCity) {
         // 城池：三角标记
+        var ts = THEME.placeTriSize;
         ctx.fillStyle = '#2c2c2c';
         ctx.beginPath();
-        ctx.moveTo(pt.x, pt.y - 8);
-        ctx.lineTo(pt.x + 7, pt.y + 6);
-        ctx.lineTo(pt.x - 7, pt.y + 6);
+        ctx.moveTo(pt.x, pt.y - ts);
+        ctx.lineTo(pt.x + ts - 1, pt.y + ts - 2);
+        ctx.lineTo(pt.x - ts + 1, pt.y + ts - 2);
         ctx.closePath();
         ctx.fill();
       } else {
         // 营寨：圆形标记
         ctx.fillStyle = '#8b4513';
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, THEME.placeDotRadius, 0, Math.PI * 2);
         ctx.fill();
       }
       // 地名标签
       if (f.name) {
         ctx.save();
-        ctx.font = '12px "Noto Serif SC", "SimSun", serif';
+        ctx.font = THEME.placeLabelFont;
         ctx.fillStyle = '#2c2c2c';
         ctx.textAlign = 'center';
         ctx.fillText(f.name, pt.x, pt.y + 10);
@@ -369,7 +374,7 @@
 
         var key = lng.toFixed(4) + ',' + lat.toFixed(4);
         if (!slotGroups[key]) slotGroups[key] = [];
-        var item = { lng: lng, lat: lat, props: props, slot: props._slot || 0 };
+        var item = { lng: lng, lat: lat, props: props, slot: slotGroups[key].length };
         slotGroups[key].push(item);
         unitBanners.push(item);
       });
@@ -378,6 +383,10 @@
       Object.keys(slotGroups).forEach(function (key) {
         var group = slotGroups[key];
         group.forEach(function (item) { item.total = group.length; });
+        if (group.length > 1) {
+          var names = group.map(function (g) { return g.props.unit_name + '(slot=' + g.slot + ')'; });
+          console.log('[Tactical] 同坐标 ' + key + ' 共 ' + group.length + ' 部队: ' + names.join(', '));
+        }
       });
 
       // 建立名字→屏幕坐标的合并查找表（部队名 + 地名）
@@ -396,11 +405,18 @@
         screenLookup[name] = { x: pt.x + off.x, y: pt.y + off.y };
       });
 
-      // 绘制部队旗帜
+      // 部队编制→兵数查找表
+      var troopLookup = {};
+      (data.units || []).forEach(function (u) {
+        if (u.name) troopLookup[u.name] = u.troop_count || '';
+      });
+
+      // 绘制部队兵牌
       unitBanners.forEach(function (item) {
         var pt = _project(item.lng, item.lat);
         var off = _circularOffset(item.slot, item.total);
-        _drawFlag(pt.x + off.x, pt.y + off.y, item.props.faction, item.props.unit_name);
+        _drawUnitCard(pt.x + off.x, pt.y + off.y, item.props.faction,
+          item.props.unit_name, troopLookup[item.props.unit_name] || '');
       });
 
       // 绘制攻击箭头
@@ -451,7 +467,6 @@
     ctx.scale(dpr, dpr);
 
     window.addEventListener('resize', _onResize);
-    _loadBannerImages();
 
     if (typeof rough !== 'undefined') {
       roughCanvas = rough.canvas(canvas);
@@ -522,8 +537,6 @@
     roughGen = null;
     roughCanvas = null;
     geojsonData = null;
-    bannerImages = {};
-    bannerLoaded = false;
     _proj = null;
   }
 

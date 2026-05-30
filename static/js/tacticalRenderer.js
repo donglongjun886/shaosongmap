@@ -307,11 +307,12 @@
       }
     });
 
-    // 3. 行军路线
-    ctx.strokeStyle = '#8b4513';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 4]);
-    routes.forEach(function (r) {
+    // 3. 行军路线（仅非时间轴模式）
+    if (totalSteps === 0) {
+      ctx.strokeStyle = '#8b4513';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
+      routes.forEach(function (r) {
       if (!r.coordinates || r.coordinates.length < 2) return;
       ctx.beginPath();
       var start = _project(r.coordinates[0][0], r.coordinates[0][1]);
@@ -323,6 +324,7 @@
       ctx.stroke();
     });
     ctx.setLineDash([]);
+    }
 
     // 4. 地名标记
     features.forEach(function (f) {
@@ -383,10 +385,6 @@
       Object.keys(slotGroups).forEach(function (key) {
         var group = slotGroups[key];
         group.forEach(function (item) { item.total = group.length; });
-        if (group.length > 1) {
-          var names = group.map(function (g) { return g.props.unit_name + '(slot=' + g.slot + ')'; });
-          console.log('[Tactical] 同坐标 ' + key + ' 共 ' + group.length + ' 部队: ' + names.join(', '));
-        }
       });
 
       // 建立名字→屏幕坐标的合并查找表（部队名 + 地名）
@@ -419,27 +417,29 @@
           item.props.unit_name, troopLookup[item.props.unit_name] || '');
       });
 
-      // 绘制攻击箭头
-      unitBanners.forEach(function (item) {
-        var props = item.props;
-        var targetName = props.direction_target;
-        if (!targetName) return;
+      // 6. 攻击箭头（仅时间轴模式）
+      if (totalSteps > 0) {
+        unitBanners.forEach(function (item) {
+          var props = item.props;
+          var targetName = props.direction_target;
+          if (!targetName) return;
 
-        var tgtScreen = screenLookup[targetName];
-        if (!tgtScreen) return;
+          var tgtScreen = screenLookup[targetName];
+          if (!tgtScreen) return;
 
-        var pt = _project(item.lng, item.lat);
-        var off = _circularOffset(item.slot, item.total);
-        var startX = pt.x + off.x;
-        var startY = pt.y + off.y;
+          var pt = _project(item.lng, item.lat);
+          var off = _circularOffset(item.slot, item.total);
+          var startX = pt.x + off.x;
+          var startY = pt.y + off.y;
 
-        var arrowLen = Math.hypot(tgtScreen.x - startX, tgtScreen.y - startY);
-        if (arrowLen >= 30) {
-          _drawArrow(startX, startY, tgtScreen.x, tgtScreen.y,
-            _factionColor(props.faction), props.status,
-            _hash32('arrow-' + (props.unit_name || '') + '-' + targetName));
-        }
-      });
+          var arrowLen = Math.hypot(tgtScreen.x - startX, tgtScreen.y - startY);
+          if (arrowLen >= 30) {
+            _drawArrow(startX, startY, tgtScreen.x, tgtScreen.y,
+              _factionColor(props.faction), props.status,
+              _hash32('arrow-' + (props.unit_name || '') + '-' + targetName));
+          }
+        });
+      }
     }
 
     // 7. 图例（TODO）

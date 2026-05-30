@@ -295,9 +295,41 @@
     // TODO: 2. 地形装饰（后续实现）
 
     var data = geojsonData;
+
+    // ── 诊断日志 ──
+    var isTimeline = totalSteps > 0;
+    console.log('[Tactical] ===== 渲染诊断 =====');
+    console.log('[Tactical] 模式:', isTimeline ? '时间轴 (step=' + currentStep + '/' + totalSteps + ')' : '非时间轴');
+    console.log('[Tactical] scale:', data.scale || '?');
+    console.log('[Tactical] campaign:', data.campaign_name || '?');
+    console.log('[Tactical] 阵营:', (data.factions || []).map(function (f) { return f.name + '(' + f.troops + ')'; }));
+    console.log('[Tactical] 地名 features:', (data.features || []).length, '个');
+    (data.features || []).forEach(function (f, i) {
+      console.log('[Tactical]   地点' + (i + 1) + ':', f.name, '| 坐标(' + f.lng + ',' + f.lat + ')', '| 来源=' + f.source, '| 类型=' + (f.place_type || '-'));
+    });
+    console.log('[Tactical] 路线 routes:', (data.routes || []).length, '条');
+    (data.routes || []).forEach(function (r, i) {
+      var pts = (r.coordinates || []).map(function (c) { return '[' + c[0].toFixed(4) + ',' + c[1].toFixed(4) + ']'; });
+      console.log('[Tactical]   路线' + (i + 1) + ':', r.from_place, '→', r.to_place, '| 节点:', pts.join(' → '));
+    });
+    var geojson = data.geojson;
+    if (geojson && geojson.features) {
+      var unitFeatures = geojson.features.filter(function (f) { return (f.properties || {})._feature_type === 'unit_banner'; });
+      console.log('[Tactical] 部队 unit_banner:', unitFeatures.length, '个');
+      unitFeatures.forEach(function (f, i) {
+        var p = f.properties || {};
+        console.log('[Tactical]   部队' + (i + 1) + ':', p.unit_name, '| 阵营=' + p.faction, '| 状态=' + p.status, '| step=' + p.step, '| 方向目标=' + (p.direction_target || '-'));
+      });
+    }
+    console.log('[Tactical] 部队编制 units:', (data.units || []).length, '个');
+    (data.units || []).forEach(function (u, i) {
+      console.log('[Tactical]   编制' + (i + 1) + ':', u.name, '| 类型=' + (u.troop_type || '-'), '| 兵力=' + (u.troop_count || '-'), '| 将领=' + (u.commander || '-'));
+    });
+    console.log('[Tactical] 后端参数:', JSON.stringify({ elapsed: data.elapsed, total_steps: data.total_steps }));
+    console.log('[Tactical] ===== 诊断结束 =====');
+
     var features = data.features || [];
     var routes = data.routes || [];
-    var geojson = data.geojson;
 
     // 建立地名坐标查找表
     var placeLookup = {};

@@ -191,13 +191,41 @@ def _safe_api_content(resp, func_name: str) -> str:
         logger.warning('%s: API 返回空 choices（可能安全审核拦截）', func_name)
         return _business_error('模型未返回有效结果，可能触发了安全审核')
     choice = resp.choices[0]
-    content = choice.message.content.strip() if choice.message.content else ''
+    message = choice.message
+    content = message.content.strip() if message and message.content else ''
     if not content:
         return '(模型返回空)'
     if choice.finish_reason == 'length':
         logger.warning('%s: 输出被截断 (finish_reason=length)', func_name)
         content += '\n\n[警告：审查意见因达到 max_tokens 限制被截断，请缩小输入或增加 max_tokens]'
     return content
+
+
+def _call_qwen_text_review(
+    system_prompt: str,
+    user_content: str,
+    tool_name: str,
+    model: str = 'qwen3.7-max',
+    max_tokens: int = 4000,
+) -> str:
+    """调用 Qwen 文本模型做审查，返回提取后的文本内容。
+
+    review_design 和 review_snippet 共享的底层调用逻辑。
+    """
+    logger.info('%s: 调用 %s (content_len=%d)', tool_name, model, len(user_content))
+    client = _get_qwen_client()
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_content},
+        ],
+        max_tokens=max_tokens,
+        temperature=0.3,
+    )
+    result = _safe_api_content(resp, tool_name)
+    logger.info('%s: 完成 (result_len=%d)', tool_name, len(result))
+    return result
 
 
 # ── API 客户端（惰性初始化） ──────────────────────────────
@@ -328,6 +356,22 @@ def review_code() -> str:
         return _business_error(f'代码审查异常: {exc}')
 
 
+def _extract_selftest_summary(output: str) -> str:
+    """从 selftest 流式输出中提取关键摘要行，最多保留 30 行。"""
+    keywords = ('✅', '❌', '⚠️', '部队', '时间轴', '视觉', '自测')
+    summary_lines = [ln for ln in output.splitlines() if any(kw in ln for kw in keywords)]
+    summary = '\n'.join(summary_lines[-30:])
+    return summary if summary else output[-1500:]
+
+
+def _build_selftest_result(status: str, summary: str, stderr: str = '') -> str:
+    """构建 e2e 自测的 JSON 返回结果。"""
+    payload: dict = {'status': status, 'summary': summary}
+    if stderr:
+        payload['stderr'] = stderr[:500]
+    return json.dumps(payload, ensure_ascii=False)
+
+
 @mcp.tool()
 def run_e2e_test(url: str = 'http://localhost:8000', test_text: str = '') -> str:
     """运行前端端到端自测：Playwright 截图 → 程序化检查 → Qwen-VL 视觉验证。
@@ -340,7 +384,6 @@ def run_e2e_test(url: str = 'http://localhost:8000', test_text: str = '') -> str
         JSON: {"status": "pass"|"fail", "checks": {...}, "visual_issues": [...], "screenshot": "..."}
     """
     script = (PROJECT_ROOT / 'scripts' / 'selftest.py').resolve()
-    # selftest.py 依赖 describe.py，两者都在 scripts/ 目录下
     cmd = [sys.executable, str(script)]
     if test_text:
         cmd.append(test_text)
@@ -356,37 +399,12 @@ def run_e2e_test(url: str = 'http://localhost:8000', test_text: str = '') -> str
             cwd=str(PROJECT_ROOT),
             env={**os.environ},
         )
-        # selftest 的输出流式较长，MCP 只返回摘要
-        output = result.stdout
-        # 提取关键行：程序化检查结果 + 视觉审查结论
-        lines = output.splitlines()
-        summary_lines = [
-            ln
-            for ln in lines
-            if any(kw in ln for kw in ('✅', '❌', '⚠️', '部队', '时间轴', '视觉', '自测'))
-        ]
-        summary = '\n'.join(summary_lines[-30:])  # 最多保留 30 行
-        if not summary:
-            summary = output[-1500:]  # fallback: 最后 1500 字符
-
+        summary = _extract_selftest_summary(result.stdout)
         if result.returncode != 0:
             logger.warning('run_e2e_test: 失败 rc=%d', result.returncode)
-            return json.dumps(
-                {
-                    'status': 'fail',
-                    'summary': summary,
-                    'stderr': result.stderr[:500],
-                },
-                ensure_ascii=False,
-            )
+            return _build_selftest_result('fail', summary, result.stderr)
         logger.info('run_e2e_test: 完成 (status=pass)')
-        return json.dumps(
-            {
-                'status': 'pass',
-                'summary': summary,
-            },
-            ensure_ascii=False,
-        )
+        return _build_selftest_result('pass', summary)
     except subprocess.TimeoutExpired:
         logger.error('run_e2e_test: 超时 (180s)')
         return _business_error(
@@ -425,28 +443,12 @@ def review_design(design_text: str, context: str = '') -> str:
         '每个问题标注严重程度（致命/严重/建议），说明根因并给出改进方向。用中文，直接说重点。'
     )
 
-    user_parts = [f'请审查以下设计方案：\n\n{design_text}']
+    user_parts = [f'请审查以下设计方案：\n\n<design>\n{design_text}\n</design>']
+    context = (context or '').strip()
     if context:
-        user_parts.append(f'\n\n项目背景/补充上下文：\n{context}')
+        user_parts.append(f'\n项目背景/补充上下文：\n<context>\n{context}\n</context>')
 
-    logger.info(
-        'review_design: 调用 Qwen3.7-Max (design_len=%d, context_len=%d)',
-        len(design_text),
-        len(context),
-    )
-    client = _get_qwen_client()
-    resp = client.chat.completions.create(
-        model='qwen3.7-max',
-        messages=[
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': '\n'.join(user_parts)},
-        ],
-        max_tokens=4000,
-        temperature=0.3,
-    )
-    result = _safe_api_content(resp, 'review_design')
-    logger.info('review_design: 完成 (result_len=%d)', len(result))
-    return result
+    return _call_qwen_text_review(system_prompt, '\n'.join(user_parts), 'review_design')
 
 
 @mcp.tool()
@@ -466,34 +468,20 @@ def review_snippet(code_snippet: str, question: str = '') -> str:
     """
     if err := _validate_input_length(code_snippet, '代码片段'):
         return err
+    question = (question or '').strip()
+    if question and (err := _validate_input_length(question, '排查方向')):
+        return err
 
     system_prompt = (
         '你是一位资深工程师。审查代码，找出 bug、逻辑错误和边界问题。'
         '每个问题标注严重程度（致命/严重/建议），说明根因并给出修复方案。用中文，直接说重点。'
     )
 
-    user_parts = [f'请审查以下代码片段：\n\n```\n{code_snippet}\n```']
+    user_parts = [f'请审查以下代码片段：\n\n<code>\n{code_snippet}\n</code>']
     if question:
-        user_parts.append(f'\n排查方向：{question}')
+        user_parts.append(f'\n排查方向：<question>\n{question}\n</question>')
 
-    logger.info(
-        'review_snippet: 调用 Qwen3.7-Max (snippet_len=%d, question_len=%d)',
-        len(code_snippet),
-        len(question),
-    )
-    client = _get_qwen_client()
-    resp = client.chat.completions.create(
-        model='qwen3.7-max',
-        messages=[
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': '\n'.join(user_parts)},
-        ],
-        max_tokens=4000,
-        temperature=0.3,
-    )
-    result = _safe_api_content(resp, 'review_snippet')
-    logger.info('review_snippet: 完成 (result_len=%d)', len(result))
-    return result
+    return _call_qwen_text_review(system_prompt, '\n'.join(user_parts), 'review_snippet')
 
 
 # ── 全局异常兜底 + 资源清理 ──────────────────────────────

@@ -36,6 +36,7 @@ import functools
 import io
 import json
 import logging
+import logging.handlers
 import os
 import subprocess
 import sys
@@ -66,9 +67,11 @@ def _validate_path(path: str) -> Path:
     for root in _ALLOWED_ROOTS:
         try:
             p.relative_to(root)
+            logger.info('路径校验通过: %s (root=%s)', p, root)
             return p
         except ValueError:
             continue
+    logger.warning('路径越权: %s (不在白名单内)', p)
     raise PermissionError(f'路径越权: {path}（不在白名单 {_ALLOWED_ROOTS} 内）')
 
 
@@ -102,16 +105,29 @@ def _prepare_image(path: Path, max_edge: int = 1280, quality: int = 75) -> tuple
     quality=75 截图足够 Qwen-VL 识别，比 85 省 30-40% 体积。
     去掉 optimize=True，对截图性价比低（省 5-10% 体积但编码慢 2-3x）。
     """
+    logger.info('开始处理图片: %s (max_edge=%d, quality=%d)', path.name, max_edge, quality)
     img = Image.open(path)
     w, h = img.size
+    original_size = (w, h)
     if max(w, h) > max_edge:
         ratio = max_edge / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+        logger.info('图片已缩放: %dx%d -> %dx%d', w, h, img.size[0], img.size[1])
     if img.mode in ('RGBA', 'P'):
         img = img.convert('RGB')
     buf = io.BytesIO()
     img.save(buf, format='JPEG', quality=quality)
     b64 = base64.b64encode(buf.getvalue()).decode()
+    logger.info(
+        '图片处理完成: %s %dx%d -> %dx%d, jpeg_q=%d, b64_len=%d',
+        path.name,
+        original_size[0],
+        original_size[1],
+        img.size[0],
+        img.size[1],
+        quality,
+        len(b64),
+    )
     return 'image/jpeg', f'data:image/jpeg;base64,{b64}'
 
 
@@ -128,7 +144,10 @@ def _transient_retry(func, max_retries: int = 1):
         last_exc = None
         for attempt in range(max_retries + 1):
             try:
-                return func(*args, **kwargs)
+                logger.info('调用 %s (attempt=%d/%d)', func.__name__, attempt + 1, max_retries + 1)
+                result = func(*args, **kwargs)
+                logger.info('%s 调用成功', func.__name__)
+                return result
             except Exception as exc:
                 last_exc = exc
                 msg = str(exc).lower()
@@ -152,6 +171,35 @@ def _business_error(msg: str) -> str:
     )
 
 
+_MAX_INPUT_CHARS = 80000
+
+
+def _validate_input_length(text: str, label: str) -> str | None:
+    """校验输入长度，超限返回错误 JSON 字符串，否则返回 None。"""
+    if not text or not text.strip():
+        logger.warning('%s: 输入为空', label)
+        return _business_error(f'{label}不能为空')
+    if len(text) > _MAX_INPUT_CHARS:
+        logger.warning('%s: 输入过长 (%d > %d)', label, len(text), _MAX_INPUT_CHARS)
+        return _business_error(f'{label}过长（{len(text)}字符），请拆分后分批审查')
+    return None
+
+
+def _safe_api_content(resp, func_name: str) -> str:
+    """安全提取 API 响应文本：检查 choices 判空 + finish_reason 截断提示。"""
+    if not resp.choices:
+        logger.warning('%s: API 返回空 choices（可能安全审核拦截）', func_name)
+        return _business_error('模型未返回有效结果，可能触发了安全审核')
+    choice = resp.choices[0]
+    content = choice.message.content.strip() if choice.message.content else ''
+    if not content:
+        return '(模型返回空)'
+    if choice.finish_reason == 'length':
+        logger.warning('%s: 输出被截断 (finish_reason=length)', func_name)
+        content += '\n\n[警告：审查意见因达到 max_tokens 限制被截断，请缩小输入或增加 max_tokens]'
+    return content
+
+
 # ── API 客户端（惰性初始化） ──────────────────────────────
 _qwen_client = None
 _deepseek_client = None
@@ -165,6 +213,7 @@ def _get_qwen_client():
         api_key = os.environ.get('DASHSCOPE_API_KEY', '')
         if not api_key:
             raise RuntimeError('DASHSCOPE_API_KEY 未配置')
+        logger.info('初始化 Qwen 客户端 (base_url=dashscope)')
         _qwen_client = OpenAI(
             api_key=api_key,
             base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -181,6 +230,7 @@ def _get_deepseek_client():
         api_key = os.environ.get('DEEPSEEK_API_KEY', '')
         if not api_key:
             raise RuntimeError('DEEPSEEK_API_KEY 未配置')
+        logger.info('初始化 DeepSeek 客户端 (base_url=api.deepseek.com)')
         _deepseek_client = OpenAI(
             api_key=api_key,
             base_url='https://api.deepseek.com',
@@ -205,11 +255,13 @@ def analyze_ui(image_path: str, question: str = '') -> str:
     """
     path = _validate_path(image_path)
     if not _wait_file_ready(path):
+        logger.warning('analyze_ui: 图片未就绪 %s', image_path)
         return _business_error(f'图片文件未就绪或不存在: {image_path}')
 
     try:
         mime, data_url = _prepare_image(path)
     except Exception as exc:
+        logger.error('analyze_ui: 图片处理失败 %s: %s', image_path, exc)
         return _business_error(f'图片处理失败: {exc}')
 
     default_prompt = (
@@ -217,6 +269,11 @@ def analyze_ui(image_path: str, question: str = '') -> str:
         '以及任何明显的视觉问题（如元素重叠、文字截断、错位、报错信息等）。'
     )
 
+    logger.info(
+        'analyze_ui: 调用 Qwen-VL-Max (image=%s, question_len=%d)',
+        path.name,
+        len(question),
+    )
     client = _get_qwen_client()
     resp = client.chat.completions.create(
         model='qwen-vl-max',
@@ -232,8 +289,9 @@ def analyze_ui(image_path: str, question: str = '') -> str:
         max_tokens=2000,
         temperature=0.3,
     )
-    content = resp.choices[0].message.content
-    return content.strip() if content else '(模型返回空)'
+    result = _safe_api_content(resp, 'analyze_ui')
+    logger.info('analyze_ui: 完成 (result_len=%d)', len(result))
+    return result
 
 
 @mcp.tool()
@@ -243,6 +301,7 @@ def review_code() -> str:
     独立于 MCP 也可通过 git hook 或命令行 python scripts/code_review.py 运行。
     """
     script = (PROJECT_ROOT / 'scripts' / 'code_review.py').resolve()
+    logger.info('review_code: 开始审查 (script=%s)', script)
     try:
         result = subprocess.run(
             [sys.executable, str(script), '--format', 'json'],
@@ -253,15 +312,19 @@ def review_code() -> str:
             env={**os.environ},
         )
         if result.returncode != 0:
+            logger.error(
+                'review_code: 失败 rc=%d stderr=%s', result.returncode, result.stderr[:200]
+            )
             return _business_error(
                 f'code_review 执行失败 (rc={result.returncode}): {result.stderr[:300]}'
             )
+        logger.info('review_code: 完成 (output_len=%d)', len(result.stdout))
         return result.stdout.strip()
     except subprocess.TimeoutExpired:
-        logger.error('review_code 超时')
+        logger.error('review_code: 超时')
         return _business_error('代码审查超时（120s），diff 可能过大，建议手动审查或分批提交')
     except Exception as exc:
-        logger.error('review_code 异常: %s', exc)
+        logger.error('review_code: 异常 %s', exc)
         return _business_error(f'代码审查异常: {exc}')
 
 
@@ -283,6 +346,7 @@ def run_e2e_test(url: str = 'http://localhost:8000', test_text: str = '') -> str
         cmd.append(test_text)
     cmd.extend(['--url', url])
 
+    logger.info('run_e2e_test: 开始 (url=%s, test_text_len=%d)', url, len(test_text))
     try:
         result = subprocess.run(
             cmd,
@@ -306,6 +370,7 @@ def run_e2e_test(url: str = 'http://localhost:8000', test_text: str = '') -> str
             summary = output[-1500:]  # fallback: 最后 1500 字符
 
         if result.returncode != 0:
+            logger.warning('run_e2e_test: 失败 rc=%d', result.returncode)
             return json.dumps(
                 {
                     'status': 'fail',
@@ -314,6 +379,7 @@ def run_e2e_test(url: str = 'http://localhost:8000', test_text: str = '') -> str
                 },
                 ensure_ascii=False,
             )
+        logger.info('run_e2e_test: 完成 (status=pass)')
         return json.dumps(
             {
                 'status': 'pass',
@@ -322,12 +388,12 @@ def run_e2e_test(url: str = 'http://localhost:8000', test_text: str = '') -> str
             ensure_ascii=False,
         )
     except subprocess.TimeoutExpired:
-        logger.error('run_e2e_test 超时')
+        logger.error('run_e2e_test: 超时 (180s)')
         return _business_error(
             '端到端自测超时（180s），建议检查服务是否运行，手动执行 python scripts/selftest.py'
         )
     except Exception as exc:
-        logger.error('run_e2e_test 异常: %s', exc)
+        logger.error('run_e2e_test: 异常 %s', exc)
         return _business_error(f'自测异常: {exc}')
 
 
@@ -351,26 +417,23 @@ def review_design(design_text: str, context: str = '') -> str:
     Returns:
         审查意见：问题列表、风险点、改进建议
     """
+    if err := _validate_input_length(design_text, '设计方案'):
+        return err
+
     system_prompt = (
-        '你是一位资深软件架构师和代码审查专家。你的职责是审查设计方案，'
-        '找出其中的逻辑漏洞、边界条件遗漏、性能隐患、安全风险和可维护性问题。\n\n'
-        '审查原则：\n'
-        '1. 挑问题是你的核心价值——宁可多报误报，不要漏掉真问题\n'
-        '2. 每个问题给出：问题描述 + 影响程度（致命/严重/建议）+ 改进方向\n'
-        '3. 关注点：数据一致性、并发安全、异常路径、扩展性瓶颈、技术选型合理性\n'
-        '4. 不要重复设计文档中已有的内容，也不要写完整实现代码\n'
-        '5. 用中文输出，简洁直接，不要客套话\n\n'
-        '输出格式：\n'
-        '## 致命问题\n（会导致系统崩溃、数据丢失的问题）\n\n'
-        '## 严重问题\n（会导致功能异常、性能显著下降的问题）\n\n'
-        '## 改进建议\n（不影响正确性但能提升质量的建议）\n\n'
-        '## 遗漏提醒\n（设计方案中未覆盖但应该考虑的方面）'
+        '你是一位资深软件架构师。审查设计方案，找出逻辑漏洞、边界遗漏、性能隐患和安全风险。'
+        '每个问题标注严重程度（致命/严重/建议），说明根因并给出改进方向。用中文，直接说重点。'
     )
 
     user_parts = [f'请审查以下设计方案：\n\n{design_text}']
     if context:
         user_parts.append(f'\n\n项目背景/补充上下文：\n{context}')
 
+    logger.info(
+        'review_design: 调用 Qwen3.7-Max (design_len=%d, context_len=%d)',
+        len(design_text),
+        len(context),
+    )
     client = _get_qwen_client()
     resp = client.chat.completions.create(
         model='qwen3.7-max',
@@ -381,8 +444,9 @@ def review_design(design_text: str, context: str = '') -> str:
         max_tokens=4000,
         temperature=0.3,
     )
-    content = resp.choices[0].message.content
-    return content.strip() if content else '(模型返回空)'
+    result = _safe_api_content(resp, 'review_design')
+    logger.info('review_design: 完成 (result_len=%d)', len(result))
+    return result
 
 
 @mcp.tool()
@@ -400,25 +464,23 @@ def review_snippet(code_snippet: str, question: str = '') -> str:
     Returns:
         审查意见：问题列表、根因分析、修复建议
     """
+    if err := _validate_input_length(code_snippet, '代码片段'):
+        return err
+
     system_prompt = (
-        '你是一位资深前端/全栈工程师，精通 JavaScript、Canvas 2D、Python。'
-        '你的职责是审查用户提供的代码片段，定位 bug 和逻辑问题。\n\n'
-        '审查原则：\n'
-        '1. 聚焦用户提出的问题，给出根因分析和具体修复建议\n'
-        '2. 问题分级：🔴 致命（会导致崩溃/白屏）| 🟡 严重（功能异常）| 🟢 建议（质量提升）\n'
-        '3. 如果代码没有明显问题但现象对不上，指出排查方向和数据流断点\n'
-        '4. 修复建议要给出具体代码改动，不要笼统描述\n'
-        '5. 用中文输出，简洁直接\n\n'
-        '输出格式：\n'
-        '## 根因分析\n（问题的根本原因）\n\n'
-        '## 问题列表\n- 🔴/🟡/🟢 问题描述 + 修复建议\n\n'
-        '## 修复代码\n（关键改动片段，diff 格式）'
+        '你是一位资深工程师。审查代码，找出 bug、逻辑错误和边界问题。'
+        '每个问题标注严重程度（致命/严重/建议），说明根因并给出修复方案。用中文，直接说重点。'
     )
 
     user_parts = [f'请审查以下代码片段：\n\n```\n{code_snippet}\n```']
     if question:
         user_parts.append(f'\n排查方向：{question}')
 
+    logger.info(
+        'review_snippet: 调用 Qwen3.7-Max (snippet_len=%d, question_len=%d)',
+        len(code_snippet),
+        len(question),
+    )
     client = _get_qwen_client()
     resp = client.chat.completions.create(
         model='qwen3.7-max',
@@ -429,8 +491,9 @@ def review_snippet(code_snippet: str, question: str = '') -> str:
         max_tokens=4000,
         temperature=0.3,
     )
-    content = resp.choices[0].message.content
-    return content.strip() if content else '(模型返回空)'
+    result = _safe_api_content(resp, 'review_snippet')
+    logger.info('review_snippet: 完成 (result_len=%d)', len(result))
+    return result
 
 
 # ── 全局异常兜底 + 资源清理 ──────────────────────────────
@@ -460,7 +523,37 @@ def _global_exception_handler(exc_type, exc_value, exc_tb):
 
 sys.excepthook = _global_exception_handler
 
+# ── 日志落盘 ──────────────────────────────────────────────
+
+_LOG_DIR = PROJECT_ROOT / 'mcp_server'
+_LOG_FILE = _LOG_DIR / 'qwen_mcp.log'
+
+
+def _setup_logging() -> None:
+    """配置日志：文件落盘（RotatingFileHandler）+ stderr 双输出。"""
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    fmt = logging.Formatter(
+        '[%(asctime)s][%(filename)s][%(funcName)s:%(lineno)d] %(levelname)s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    )
+    file_handler = logging.handlers.RotatingFileHandler(
+        str(_LOG_FILE), maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8'
+    )
+    file_handler.setFormatter(fmt)
+    file_handler.setLevel(logging.INFO)
+
+    stream_handler = logging.StreamHandler(sys.stderr)
+    stream_handler.setFormatter(fmt)
+    stream_handler.setLevel(logging.WARNING)
+
+    root_logger = logging.getLogger('qwen-mcp')
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
+
+
 # ── 入口 ──────────────────────────────────────────────────
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARNING, format='[qwen-mcp] %(levelname)s: %(message)s')
+    _setup_logging()
+    logger.info('Qwen MCP Server 启动 (project_root=%s)', PROJECT_ROOT)
     mcp.run()

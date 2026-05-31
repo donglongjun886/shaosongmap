@@ -36,6 +36,7 @@
     terrainFillWeight: 1.2,
     terrainHachureGap: 6,
     terrainSizeRatio: 0.10,  // 色块半径 = 数据对角线 × 此比例
+    terrainBase: { fillStyle: 'hachure', color: '#c8b896', alpha: 0.08, angle: 0 },
     terrainTypes: {
       mountain:      { fillStyle: 'cross-hatch', color: '#8b7765', angle: -45 },
       mountain_pass: { fillStyle: 'hachure',     color: '#9b8765', angle: -30 },
@@ -228,21 +229,31 @@
   // 绘制单块地形色块
   function _drawTerrainBlock(px, py, sizeMeters, placeType) {
     if (!roughGen || !roughCanvas) return;
-    var cfg = THEME.terrainTypes[placeType];
-    if (!cfg) return;
-
-    // 米 → 像素（用投影中的 scale）
-    var blockPx = sizeMeters * (_proj ? _proj.scale : 1);
-    blockPx = Math.min(Math.max(blockPx, 30), 300); // 钳制 30~300px
+    // 底图层：使用 terrainBase 配置
+    var cfg, blockPx, blockPy, colorAlpha;
+    if (placeType._base) {
+      cfg = THEME.terrainBase;
+      blockPx = sizeMeters;  // 底图层直接传像素尺寸
+      blockPy = sizeMeters * 0.7;
+      colorAlpha = cfg.alpha;
+    } else {
+      cfg = THEME.terrainTypes[placeType];
+      if (!cfg) return;
+      // 米 → 像素（用投影中的 scale）
+      blockPx = sizeMeters * (_proj ? _proj.scale : 1);
+      blockPx = Math.min(Math.max(blockPx, 30), 300); // 钳制 30~300px
+      blockPy = blockPx * 0.7;
+      colorAlpha = THEME.terrainAlpha;
+    }
 
     var seed = _hash32('terrain-' + px + '-' + py);
-    var verts = _irregularVerts(px, py, blockPx, blockPx * 0.7, seed);
+    var verts = _irregularVerts(px, py, blockPx, blockPy, seed);
 
     var col = cfg.color;
     var r = parseInt(col.slice(1, 3), 16);
     var g = parseInt(col.slice(3, 5), 16);
     var b = parseInt(col.slice(5, 7), 16);
-    var fillColor = 'rgba(' + r + ',' + g + ',' + b + ',' + THEME.terrainAlpha + ')';
+    var fillColor = 'rgba(' + r + ',' + g + ',' + b + ',' + colorAlpha + ')';
 
     var opts = {
       fill: fillColor,
@@ -250,7 +261,7 @@
       roughness: THEME.terrainRoughness,
       fillWeight: THEME.terrainFillWeight,
       hachureGap: THEME.terrainHachureGap,
-      hachureAngle: cfg.angle,
+      hachureAngle: cfg.angle || 0,
       stroke: 'transparent',
       seed: seed
     };
@@ -376,6 +387,9 @@
     var geojson = data.geojson;
 
     // 2. 地形色块
+    // 底图层：全画布中性土色，填充各地形色块间隙
+    _drawTerrainBlock(w / 2, h / 2, Math.max(w, h), { _base: true });
+    // 各地形色块叠加
     var diagonalM = _computeDataDiagonal(features);
     var terrainSizeM = diagonalM * THEME.terrainSizeRatio;
     features.forEach(function (f) {

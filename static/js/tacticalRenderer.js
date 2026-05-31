@@ -29,7 +29,20 @@
     // 地点标记参数
     placeTriSize: 11,
     placeDotRadius: 7,
-    placeLabelFont: '15px "Noto Serif SC", "SimSun", serif'
+    placeLabelFont: '15px "Noto Serif SC", "SimSun", serif',
+    // 地形渲染参数
+    terrainRoughness: 2.2,
+    terrainAlpha: 0.25,
+    terrainFillWeight: 1.2,
+    terrainHachureGap: 6,
+    terrainSizeRatio: 0.10,  // 色块半径 = 数据对角线 × 此比例
+    terrainTypes: {
+      mountain:      { fillStyle: 'cross-hatch', color: '#8b7765', angle: -45 },
+      mountain_pass: { fillStyle: 'hachure',     color: '#9b8765', angle: -30 },
+      river:         { fillStyle: 'zigzag',      color: '#6495ed', angle:  0  },
+      battlefield:   { fillStyle: 'dashed',      color: '#c23b22', angle:  45 },
+      camp:          { fillStyle: 'solid',       color: '#b8a080', angle:  0  }
+    }
   };
 
   // ── 内部状态 ──
@@ -178,6 +191,72 @@
     };
   }
 
+  // ── 数据对角线计算（用于地形尺寸） ──
+
+  function _computeDataDiagonal(features) {
+    if (!features || features.length < 2) return 100;
+    var lngs = [], lats = [];
+    features.forEach(function (f) {
+      if (f.lng != null && f.lat != null) { lngs.push(f.lng); lats.push(f.lat); }
+    });
+    if (lngs.length < 2) return 100;
+    var minLng = Math.min.apply(null, lngs), maxLng = Math.max.apply(null, lngs);
+    var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
+    var midLatRad = (minLat + maxLat) / 2 * Math.PI / 180;
+    var dx = (maxLng - minLng) * 111320 * Math.cos(midLatRad);
+    var dy = (maxLat - minLat) * 111320;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // ── 地形色块绘制 ──
+
+  // 生成不规则多边形顶点（基于椭圆 + 随机扰动）
+  function _irregularVerts(cx, cy, w, h, seed) {
+    var verts = [];
+    var N = 12;
+    for (var i = 0; i < N; i++) {
+      var angle = (2 * Math.PI * i) / N;
+      var rnd = ((seed * (i + 1) * 31 + i * 17) % 100) / 100;
+      var jitter = 0.7 + rnd * 0.6;
+      var rx = (w / 2) * jitter;
+      var ry = (h / 2) * jitter;
+      verts.push([cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)]);
+    }
+    return verts;
+  }
+
+  // 绘制单块地形色块
+  function _drawTerrainBlock(px, py, sizeMeters, placeType) {
+    if (!roughGen || !roughCanvas) return;
+    var cfg = THEME.terrainTypes[placeType];
+    if (!cfg) return;
+
+    // 米 → 像素（用投影中的 scale）
+    var blockPx = sizeMeters * (_proj ? _proj.scale : 1);
+    blockPx = Math.min(Math.max(blockPx, 30), 300); // 钳制 30~300px
+
+    var seed = _hash32('terrain-' + px + '-' + py);
+    var verts = _irregularVerts(px, py, blockPx, blockPx * 0.7, seed);
+
+    var col = cfg.color;
+    var r = parseInt(col.slice(1, 3), 16);
+    var g = parseInt(col.slice(3, 5), 16);
+    var b = parseInt(col.slice(5, 7), 16);
+    var fillColor = 'rgba(' + r + ',' + g + ',' + b + ',' + THEME.terrainAlpha + ')';
+
+    var opts = {
+      fill: fillColor,
+      fillStyle: cfg.fillStyle,
+      roughness: THEME.terrainRoughness,
+      fillWeight: THEME.terrainFillWeight,
+      hachureGap: THEME.terrainHachureGap,
+      hachureAngle: cfg.angle,
+      stroke: 'transparent',
+      seed: seed
+    };
+    roughCanvas.draw(roughGen.polygon(verts, opts));
+  }
+
   // ── 部队兵牌绘制（roughjs 手绘矩形卡片，替代 SVG 图标） ──
   function _drawUnitCard(px, py, faction, unitName, troopCount) {
     if (!roughGen || !roughCanvas) return;
@@ -292,7 +371,18 @@
     ctx.fillStyle = THEME.paperBg;
     ctx.fillRect(0, 0, w, h);
 
-    // TODO: 2. 地形装饰（后续实现）
+    var data = geojsonData;
+    var features = data.features || [];
+    var geojson = data.geojson;
+
+    // 2. 地形色块
+    var diagonalM = _computeDataDiagonal(features);
+    var terrainSizeM = diagonalM * THEME.terrainSizeRatio;
+    features.forEach(function (f) {
+      if (f.lng == null || f.lat == null || !f.place_type) return;
+      var pt = _project(f.lng, f.lat);
+      _drawTerrainBlock(pt.x, pt.y, terrainSizeM, f.place_type);
+    });
 
     // 非时间轴模式：暂不支持
     if (totalSteps === 0) {
@@ -305,10 +395,6 @@
       ctx.restore();
       return;
     }
-
-    var data = geojsonData;
-    var features = data.features || [];
-    var geojson = data.geojson;
 
     // 建立地名坐标查找表
     var placeLookup = {};

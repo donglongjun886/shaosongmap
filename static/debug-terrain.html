@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>地形不规则形状调试</title>
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<style>
+  body { font-family: "Noto Serif SC", "SimSun", serif; background: #f2e8d5; padding: 20px; }
+  h2 { margin: 12px 0 6px; font-size: 16px; }
+  canvas { border: 1px solid #ccc; background: #f2e8d5; display: block; margin: 10px 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+  .controls label { font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+  .controls input[type=range] { width: 100px; }
+  button { padding: 6px 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>地形不规则形状调试 <button onclick="dumpParams()">📋 打印参数</button> <button onclick="redraw()">🔄 重绘</button></h1>
+<div class="controls">
+  <label>粗糙度 <input type="range" id="roughness" min="0.5" max="3" step="0.1" value="1.5" oninput="redraw()"></label>
+  <label>透明度 <input type="range" id="alpha" min="0.05" max="0.3" step="0.05" value="0.15" oninput="redraw()"></label>
+  <label>线重 <input type="range" id="weight" min="0.3" max="3" step="0.1" value="0.8" oninput="redraw()"></label>
+  <label>间距 <input type="range" id="gap" min="3" max="15" step="1" value="7" oninput="redraw()"></label>
+</div>
+<canvas id="mainCanvas" width="900" height="550"></canvas>
+
+<script>
+(function () {
+  'use strict';
+
+  var _hash32 = function (s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return h;
+  };
+
+  // 模拟地形数据：地名 + 坐标 + 地形类型 + 不规则形状的控制点偏移
+  var PLACES = [
+    { name: '东坡塬',   cx: 500, cy: 200, type: 'battlefield', w: 180, h: 130 },
+    { name: '干涸河沟', cx: 300, cy: 320, type: 'river',       w: 220, h: 70  },
+    { name: '塬西缓坡', cx: 150, cy: 180, type: 'mountain',    w: 160, h: 150 },
+    { name: '塬东小路', cx: 700, cy: 300, type: 'mountain_pass', w: 120, h: 80 },
+    { name: '塬底旧寨', cx: 450, cy: 420, type: 'camp',         w: 140, h: 100 },
+    { name: '塬腰梯田', cx: 650, cy: 130, type: 'battlefield',  w: 150, h: 110 }
+  ];
+
+  var TYPE_CONFIG = {
+    mountain:     { fillStyle: 'cross-hatch', color: '#8b7765', angle: -45 },
+    mountain_pass:{ fillStyle: 'hachure',     color: '#9b8765', angle: -30 },
+    river:        { fillStyle: 'zigzag',      color: '#6495ed', angle:  0  },
+    battlefield:  { fillStyle: 'dashed',      color: '#c23b22', angle:  45 },
+    camp:         { fillStyle: 'solid',       color: '#b8a080', angle:  0  }
+  };
+
+  // 生成不规则多边形顶点：在椭圆基础上加随机扰动
+  function irregularVerts(cx, cy, w, h, seed) {
+    var verts = [];
+    var N = 12; // 12个顶点
+    for (var i = 0; i < N; i++) {
+      var angle = (2 * Math.PI * i) / N;
+      // 用简单哈希代替 Math.random，保证可复现
+      var rnd = ((seed * (i + 1) * 31 + i * 17) % 100) / 100;
+      var jitter = 0.7 + rnd * 0.6; // 0.7 ~ 1.3 的随机缩放
+      var rx = (w / 2) * jitter;
+      var ry = (h / 2) * jitter;
+      verts.push([cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)]);
+    }
+    return verts;
+  }
+
+  function drawTerrain(rc, rg, place, params) {
+    var cfg = TYPE_CONFIG[place.type];
+    var seed = _hash32('terrain-' + place.name);
+    var verts = irregularVerts(place.cx, place.cy, place.w, place.h, seed);
+
+    // 解析颜色+透明度
+    var col = cfg.color;
+    var r = parseInt(col.slice(1,3), 16);
+    var g = parseInt(col.slice(3,5), 16);
+    var b = parseInt(col.slice(5,7), 16);
+    var fillColor = 'rgba(' + r + ',' + g + ',' + b + ',' + params.alpha + ')';
+
+    var opts = {
+      fill: fillColor,
+      fillStyle: cfg.fillStyle,
+      roughness: params.roughness,
+      fillWeight: params.weight,
+      hachureGap: params.gap,
+      hachureAngle: cfg.angle,
+      stroke: 'transparent',
+      seed: seed
+    };
+    rc.draw(rg.polygon(verts, opts));
+  }
+
+  function drawPlaceLabel(ctx, place) {
+    // 地名三角标记
+    ctx.fillStyle = '#2c2c2c';
+    var px = place.cx, py = place.cy;
+    var s = 8;
+    ctx.beginPath();
+    ctx.moveTo(px, py - s);
+    ctx.lineTo(px + s - 1, py + s - 2);
+    ctx.lineTo(px - s + 1, py + s - 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // 名字
+    ctx.save();
+    ctx.font = '14px "Noto Serif SC", "SimSun", serif';
+    ctx.fillStyle = '#2c2c2c';
+    ctx.textAlign = 'center';
+    ctx.fillText(place.name, px, py + 14);
+    ctx.restore();
+  }
+
+  window.redraw = function () {
+    var c = document.getElementById('mainCanvas');
+    var ctx = c.getContext('2d');
+    var rc = rough.canvas(c);
+    var rg = rough.generator();
+    var cw = c.width, ch = c.height;
+
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = '#f2e8d5'; ctx.fillRect(0, 0, cw, ch);
+
+    var params = {
+      roughness: Number(document.getElementById('roughness').value),
+      alpha: Number(document.getElementById('alpha').value),
+      weight: Number(document.getElementById('weight').value),
+      gap: Number(document.getElementById('gap').value)
+    };
+
+    // 先画地形（底层）
+    PLACES.forEach(function (place) {
+      drawTerrain(rc, rg, place, params);
+    });
+
+    // 再画地名标记（上层）
+    PLACES.forEach(function (place) {
+      drawPlaceLabel(ctx, place);
+    });
+
+    // 图例
+    var legendX = 10, legendY = ch - 100;
+    ctx.fillStyle = 'rgba(250,247,240,0.92)';
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.roundRect(legendX, legendY, 100, Object.keys(TYPE_CONFIG).length * 22 + 20, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    Object.keys(TYPE_CONFIG).forEach(function (type, i) {
+      var cfg = TYPE_CONFIG[type];
+      var y = legendY + 16 + i * 22;
+      // 小色块
+      var miniVerts = irregularVerts(legendX + 20, y, 20, 12, _hash32('legend-' + type));
+      var r = parseInt(cfg.color.slice(1,3), 16);
+      var g = parseInt(cfg.color.slice(3,5), 16);
+      var b = parseInt(cfg.color.slice(5,7), 16);
+      var miniOpts = {
+        fill: 'rgba(' + r + ',' + g + ',' + b + ',' + params.alpha + ')',
+        fillStyle: cfg.fillStyle, roughness: params.roughness,
+        fillWeight: params.weight, hachureGap: params.gap,
+        hachureAngle: cfg.angle, stroke: 'transparent',
+        seed: _hash32('legend-' + type)
+      };
+      rc.draw(rg.polygon(miniVerts, miniOpts));
+      ctx.fillStyle = '#2c2c2c';
+      ctx.font = '11px "Noto Serif SC", "SimSun", serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(cfg.fillStyle, legendX + 40, y);
+    });
+  };
+
+  window.dumpParams = function () {
+    console.log('=== 地形类型配置 ===');
+    console.log(JSON.stringify(TYPE_CONFIG, null, 2));
+    console.log('=== 当前参数 ===');
+    console.log(JSON.stringify({
+      roughness: Number(document.getElementById('roughness').value),
+      alpha: Number(document.getElementById('alpha').value),
+      fillWeight: Number(document.getElementById('weight').value),
+      hachureGap: Number(document.getElementById('gap').value)
+    }, null, 2));
+  };
+
+  redraw();
+})();
+</script>
+</body>
+</html>

@@ -69,15 +69,25 @@ function applyBasemap(name) {
 }
 
 if (map) map.on('load', () => {
-  applyBasemap('schematic');
+  applyBasemap('muted_osm');
 
-  // 加载古风 SVG 图标
-  _loadSvgIcon('fortress', 'assets/icons/fortress.svg', map);
-  _loadSvgIcon('camp', 'assets/icons/camp.svg', map);
-
-  const arrowCanvas = document.createElement('canvas');
-  arrowCanvas.width = 24; arrowCanvas.height = 24;
-  const actx = arrowCanvas.getContext('2d');
+  // Canvas 绘制图标（替代 SVG）
+  var iconC = document.createElement('canvas');
+  iconC.width = 48; iconC.height = 48;
+  var ictx = iconC.getContext('2d');
+  // 城池 △
+  ictx.fillStyle = '#2c2c2c';
+  ictx.beginPath(); ictx.moveTo(24, 6); ictx.lineTo(42, 38); ictx.lineTo(6, 38);
+  ictx.closePath(); ictx.fill();
+  map.addImage('fortress', ictx.getImageData(0, 0, 48, 48), { pixelRatio: 2 });
+  // 营寨 ●
+  ictx.clearRect(0, 0, 48, 48);
+  ictx.beginPath(); ictx.arc(24, 24, 14, 0, Math.PI * 2); ictx.fill();
+  map.addImage('camp', ictx.getImageData(0, 0, 48, 48), { pixelRatio: 2 });
+  // 箭头 ▶
+  var arrC = document.createElement('canvas');
+  arrC.width = 24; arrC.height = 24;
+  var actx = arrC.getContext('2d');
   actx.fillStyle = '#c23b22';
   actx.beginPath(); actx.moveTo(20, 12); actx.lineTo(4, 4); actx.lineTo(4, 20);
   actx.closePath(); actx.fill();
@@ -124,19 +134,6 @@ if (map) map.on('load', () => {
     paint: { 'circle-radius': 3, 'circle-color': '#c23b22', 'circle-opacity': 0.5, 'circle-stroke-width': 0 }
   });
 
-  map.addLayer({
-    id: 'places-chgis-dim', type: 'symbol', source: 'places',
-    filter: ['==', ['get', 'step'], -1],
-    layout: { 'icon-image': 'fortress', 'icon-size': 0.78, 'icon-allow-overlap': true },
-    paint: { 'icon-opacity': 0.4 }
-  });
-  map.addLayer({
-    id: 'places-llm-dim', type: 'symbol', source: 'places',
-    filter: ['==', ['get', 'step'], -1],
-    layout: { 'icon-image': 'camp', 'icon-size': 0.78, 'icon-allow-overlap': true },
-    paint: { 'icon-opacity': 0.4 }
-  });
-
   map.on('click', 'places-chgis', (e) => showPopup(e));
   map.on('click', 'places-llm', (e) => showPopup(e));
   map.on('mouseenter', 'places-chgis', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -145,216 +142,6 @@ if (map) map.on('load', () => {
   map.on('mouseleave', 'places-llm', () => { map.getCanvas().style.cursor = ''; });
 });
 
-// ── SVG 图标加载 ──
-function _loadSvgIcon(name, path, mapInstance, dim) {
-  var img = new Image();
-  img.onload = function() {
-    var canvas = document.createElement('canvas');
-    canvas.width = 128; canvas.height = 128;
-    var ctx = canvas.getContext('2d');
-    if (dim) {
-      ctx.globalAlpha = 0.35;
-      ctx.filter = 'grayscale(100%)';
-    }
-    ctx.drawImage(img, 0, 0, 128, 128);
-    mapInstance.addImage(name, ctx.getImageData(0, 0, 128, 128), { pixelRatio: 2 });
-  };
-  img.onerror = function() {
-    console.warn('[icon] failed to load ' + path + ', using fallback');
-    // 回退到手绘几何图形
-    var fallback = _makeIconSVG(name.indexOf('camp') >= 0 ? 'camp' : 'fortress',
-      dim ? '#aaa' : '#2c2c2c', 32);
-    mapInstance.addImage(name, fallback, { pixelRatio: 2 });
-  };
-  img.src = path;
-}
-
-// ── 自定义城池/营寨图标（回退方案） ──
-function _makeIconSVG(type, color, size) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (type === 'fortress') {
-    ctx.strokeStyle = color; ctx.lineWidth = 2;
-    ctx.strokeRect(3, 3, size-6, size-6);
-    ctx.strokeRect(7, 7, size-14, size-14);
-  } else {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(size/2, 3); ctx.lineTo(size-3, size-4); ctx.lineTo(3, size-4);
-    ctx.closePath(); ctx.fill();
-  }
-  return ctx.getImageData(0, 0, size, size);
-}
-
-function _makeBannerIcon(color, size) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.strokeStyle = '#2c2c2c'; ctx.lineWidth = 2;
-  ctx.strokeRect(3, 5, size-6, size-12);
-  ctx.strokeStyle = color; ctx.lineWidth = 1.5;
-  ctx.strokeRect(6, 8, size-12, size-18);
-  ctx.fillStyle = color + '25';
-  ctx.fillRect(6, 8, size-12, size-18);
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(size/2, 2); ctx.lineTo(size/2+5, 7); ctx.lineTo(size/2-5, 7);
-  ctx.closePath(); ctx.fill();
-  return ctx.getImageData(0, 0, size, size);
-}
-
-// ── 块状宽箭头（已迁移到 CanvasRenderer, 保留函数签名兼容性） ──
-// @deprecated 使用 CanvasRenderer._drawArrow 替代
-function _drawWideArrow(ctx, x1, y1, x2, y2, width, color, status, unitName) {
-  // 回退绘制：当 CanvasRenderer 不可用时使用简化版
-  if (!ctx) return;
-  ctx.save();
-  ctx.strokeStyle = color || '#c23b22';
-  ctx.lineWidth = width || 14;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function showPopup(e) {
-  const props = e.features[0].properties;
-  const sourceLabel = props.source === 'chgis' ? 'CHGIS 精确' : 'LLM 推断';
-  const coords = e.features[0].geometry.coordinates.slice();
-  new maplibregl.Popup()
-    .setLngLat(coords)
-    .setHTML('<strong>' + escHtml(props.name) + '</strong><br>来源: ' + sourceLabel + '<br>' + (props.modern_name ? '今: ' + escHtml(props.modern_name) : ''))
-    .addTo(map);
-}
-
-// ── 绍宋漫画主题 ──
-function _applyComicTheme(scale) {
-  const wrap = document.querySelector('.map-wrap');
-  const seal = document.getElementById('comic-seal');
-  const legendLabel = document.getElementById('unit-legend-label');
-  if (scale === 'tactical') {
-    wrap.classList.add('theme-comic');
-    seal.classList.remove('hidden');
-    if (legendLabel) legendLabel.textContent = '部队标记';
-  } else {
-    wrap.classList.remove('theme-comic');
-    seal.classList.add('hidden');
-    if (legendLabel) legendLabel.textContent = '部队旗帜';
-  }
-}
-
-function _renderSeal(name) {
-  const seal = document.getElementById('comic-seal');
-  const text = document.getElementById('seal-text');
-  if (!name || !text) { seal.classList.add('hidden'); return; }
-  const display = name.length > 4 ? name.substring(0, 4) : name;
-  text.textContent = display;
-  const sizes = {1: 22, 2: 18, 3: 15, 4: 13};
-  text.setAttribute('font-size', sizes[display.length] || 12);
-  seal.classList.remove('hidden');
-}
-
-function _renderTerrainBlocks(features, scale) {
-  if (map.getLayer('terrain-fills')) map.removeLayer('terrain-fills');
-  if (map.getSource('terrain-fills')) map.removeSource('terrain-fills');
-  if (scale !== 'tactical') return;
-
-  const diagonal = _computeDataDiagonal(features);
-  const radiusKm = Math.max(Math.min(diagonal * 0.05, 5000), 500) / 1000;
-
-  const fillFeatures = [];
-  features.forEach(function(f) {
-    const placeType = f.properties && f.properties.place_type;
-    const color = _terrainColorForType(placeType);
-    if (!color || !f.geometry || !f.geometry.coordinates) return;
-    fillFeatures.push({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: f.geometry.coordinates },
-      properties: { color: color, radiusKm: radiusKm }
-    });
-  });
-  if (fillFeatures.length === 0) return;
-
-  map.addSource('terrain-fills', {
-    type: 'geojson',
-    data: { type: 'FeatureCollection', features: fillFeatures }
-  });
-
-  const style = map.getStyle();
-  let beforeLayer = undefined;
-  if (style && style.layers) {
-    for (const l of style.layers) {
-      if (!(l.metadata && l.metadata.basemap) && l.id !== 'terrain-fills') {
-        beforeLayer = l.id; break;
-      }
-    }
-  }
-
-  map.addLayer({
-    id: 'terrain-fills', type: 'circle', source: 'terrain-fills',
-    paint: {
-      'circle-radius': ['*', ['get', 'radiusKm'], 1000 / 0.075],
-      'circle-color': ['get', 'color'],
-      'circle-opacity': 0.8,
-      'circle-blur': 0.5
-    }
-  }, beforeLayer);
-}
-
-function _makeComicUnitIcon(color, size) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = Math.round(size * 0.6);
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  const darker = _darkenColor(color, 0.15);
-  ctx.fillStyle = darker;
-  ctx.fillRect(0, 0, w, h);
-  const bw = 2;
-  ctx.fillStyle = color;
-  ctx.fillRect(bw, bw, w - bw * 2, h - bw * 2);
-  return ctx.getImageData(0, 0, w, h);
-}
-
-function _applyComicRouteStyle(scale) {
-  if (!map.getLayer('route-lines')) return;
-  if (scale === 'tactical') {
-    map.setPaintProperty('route-lines', 'line-width', 3.5);
-    map.setLayoutProperty('route-lines', 'line-cap', 'round');
-    map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [6, 3]]);
-    if (map.getLayer('route-arrows')) {
-      map.setLayoutProperty('route-arrows', 'icon-size', 0.96);
-    }
-  } else {
-    map.setPaintProperty('route-lines', 'line-width', 2.5);
-    map.setLayoutProperty('route-lines', 'line-cap', 'butt');
-    map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [6, 3]]);
-    if (map.getLayer('route-arrows')) {
-      map.setLayoutProperty('route-arrows', 'icon-size', 0.8);
-    }
-  }
-}
-
-function _applyComicLabelHalo(scale) {
-  ['place-labels-ancient', 'place-labels-modern'].forEach(function(layerId) {
-    if (!map.getLayer(layerId)) return;
-    if (scale === 'tactical') {
-      map.setPaintProperty(layerId, 'text-halo-color', 'rgba(255,255,255,0.75)');
-      map.setPaintProperty(layerId, 'text-halo-width', 2.5);
-      map.setPaintProperty(layerId, 'text-halo-blur', 0.5);
-    } else {
-      map.setPaintProperty(layerId, 'text-halo-color', '#fff');
-      map.setPaintProperty(layerId, 'text-halo-width', 2);
-      map.setPaintProperty(layerId, 'text-halo-blur', 0);
-    }
-  });
-}
-
-// @deprecated _renderComicUnitMarkers 已迁移到 CanvasRenderer
-// tactical 模式下兵牌由 CanvasRenderer 的 unitCanvas 层渲染
-// ── 部队偏移（已迁移到 CanvasRenderer 像素空间，地理偏移已废弃） ──
-// @deprecated 保留空函数兼容性
 
 function updateMap(data) {
   if (!map) { console.warn('[updateMap] map not initialized, skipping'); return; }
@@ -378,23 +165,14 @@ function updateMap(data) {
     }
   });
   map.getSource('route-anchors').setData({ type: 'FeatureCollection', features: anchorFeatures });
-  if (basemapMode === 'auto' && data.scale) {
-    applyBasemap(SCALE_DEFAULT_BASEMAP[data.scale] || 'schematic');
+  if (basemapMode === 'auto') {
+    applyBasemap('muted_osm');
   }
-  _applyComicTheme(data.scale);
-  _renderSeal(data.campaign_name);
-  _renderTerrainBlocks(placeFeatures, data.scale);
-  // Comic unit markers 已迁移到 CanvasRenderer（tactical 模式）
-  // 非 tactical 模式下 MapLibre unit-banners layers 正常渲染
-  _applyComicRouteStyle(data.scale);
-  _applyComicLabelHalo(data.scale);
   if (placeFeatures.length > 0) {
     const bounds = new maplibregl.LngLatBounds();
     placeFeatures.forEach(f => { if (f.geometry?.coordinates) bounds.extend(f.geometry.coordinates); });
     routeFeatures.forEach(f => { if (f.geometry?.coordinates) f.geometry.coordinates.forEach(c => bounds.extend(c)); });
-    const zoomMap = { tactical: 14, battle: 12, strategic: 10 };
-    const maxZoom = zoomMap[data.scale] || 10;
-    map.fitBounds(bounds, { padding: 60, maxZoom: maxZoom, animate: false });
+    map.fitBounds(bounds, { padding: 60, maxZoom: 12, animate: false });
   }
   applyTimelineFilters();
   } catch(e) {
@@ -412,44 +190,15 @@ function _safeLayout(layerId, prop, val) {
 }
 
 function applyTimelineFilters() {
-  if (!map) { console.warn('[applyTimelineFilters] map not initialized, skipping'); return; }
-  if (totalSteps === 0) {
-    map.setFilter('places-chgis', null);
-    map.setFilter('places-llm', null);
-    map.setFilter('places-chgis-dim', ['==', ['get', 'step'], -1]);
-    map.setFilter('places-llm-dim', ['==', ['get', 'step'], -1]);
-    map.setFilter('route-lines', null);
-    map.setFilter('route-arrows', null);
-    return;
-  }
-  var activeFilter = ['any', ['<=', ['get', 'step'], currentStep], ['!', ['has', 'step']]];
-  map.setFilter('places-chgis', activeFilter);
-  map.setFilter('places-llm', activeFilter);
-  var dimFilter = ['>', ['get', 'step'], currentStep];
-  map.setFilter('places-chgis-dim', dimFilter);
-  map.setFilter('places-llm-dim', dimFilter);
-  map.setFilter('route-lines', activeFilter);
-  map.setFilter('route-arrows', activeFilter);
+  // 静态地图模式：无时间轴过滤，全部显示
+  if (!map) return;
+  map.setFilter('places-chgis', null);
+  map.setFilter('places-llm', null);
+  map.setFilter('route-lines', null);
+  map.setFilter('route-arrows', null);
 }
 
 // ── 图层切换 ──
 function toggleLayer(layerId, visible) { if (!map) return; map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none'); }
 
-function toggleUnitLayers(visible) {
-  // No-op: 部队标记已移除
-}
 
-function showUnitPopup(e) {
-  var props = e.features[0].properties;
-  var coords = e.lngLat;
-  var statusLabels = { deploying: '待命中', marching: '进军中', engaging: '交战中', retreating: '撤退中', routing: '已溃散' };
-  var statusLabel = statusLabels[props.status] || props.status;
-  new maplibregl.Popup()
-    .setLngLat(coords)
-    .setHTML('<strong>' + escHtml(props.unit_name) + '</strong><br>' +
-      '阵营: ' + escHtml(props.faction) + '<br>' +
-      '状态: ' + statusLabel + '<br>' +
-      '方向: ' + escHtml(props.direction || '未明确') + '<br>' +
-      (props.description ? '<small>' + escHtml(props.description) + '</small>' : ''))
-    .addTo(map);
-}

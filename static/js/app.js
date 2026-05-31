@@ -214,11 +214,6 @@ function cancelReview() {
 // ── 状态 ──
 let _lastExtractData = null;
 let _dataModified = false;
-let currentStep = 1;
-let totalSteps = 0;
-let _events = [];
-let _units = [];
-let _unitStates = [];
 let _activeAbortController = null;
 function _abortPrevious() {
   if (_activeAbortController) {
@@ -474,8 +469,6 @@ async function reRender() {
     _lastExtractData = result;
     _dataModified = false;
     document.getElementById('timeline-wrap').classList.remove('active');
-    _applyComicTheme(null);
-    _renderSeal(result.campaign_name);
     updateMap(result);
     btn.textContent = '✓ 已更新';
     setTimeout(() => { btn.textContent = '🔄 重新渲染'; }, 1500);
@@ -494,92 +487,5 @@ document.addEventListener('keydown', (e) => {
     document.getElementById('error-msg-input').style.display = 'none';
     document.getElementById('error-msg-view').style.display = 'none';
   }
-  if (totalSteps === 0) return;
-  if (e.key === 'ArrowLeft') { e.preventDefault(); stepTo(currentStep - 1); }
-  if (e.key === 'ArrowRight') { e.preventDefault(); stepTo(currentStep + 1); }
 });
-
-// ── 时间轴交互 ──
-function stepTo(step) {
-  if (step < 1 || step > totalSteps) return;
-  currentStep = step;
-  applyTimelineFilters();
-  renderEventCard(currentStep);
-  renderUnitStateCard(currentStep);
-  updateTimelineBar();
-  updateStepButtons();
-}
-
-function renderTimeline() {
-  var bar = document.getElementById('timeline-bar');
-  var html = '';
-  for (var i = 1; i <= totalSteps; i++) {
-    if (i > 1) { var lineClass = (i <= currentStep) ? 'timeline-line done' : 'timeline-line'; html += '<div class="' + lineClass + '"></div>'; }
-    var nodeClass = 'timeline-node';
-    if (i < currentStep) nodeClass += ' done';
-    else if (i === currentStep) nodeClass += ' current';
-    else nodeClass += ' pending';
-    var ev = _events[i - 1] || {};
-    var typeLabel = {march: '行军', battle: '战斗', encamp: '扎营', retreat: '撤退'}[ev.event_type] || '';
-    html += '<div class="' + nodeClass + '" onclick="stepTo(' + i + ')" title="' + typeLabel + ': ' + (ev.description || '') + '"><span class="dot"></span><span class="timeline-node-label">T' + i + '</span></div>';
-  }
-  bar.innerHTML = html;
-  updateStepButtons();
-  renderEventCard(currentStep);
-}
-
-function updateTimelineBar() {
-  var nodes = document.querySelectorAll('.timeline-node');
-  var lines = document.querySelectorAll('.timeline-line');
-  nodes.forEach(function(node, i) {
-    var step = i + 1;
-    node.classList.remove('done', 'current', 'pending');
-    if (step < currentStep) node.classList.add('done');
-    else if (step === currentStep) node.classList.add('current');
-    else node.classList.add('pending');
-  });
-  lines.forEach(function(line, i) { line.classList.toggle('done', (i + 1) < currentStep); });
-}
-
-function updateStepButtons() {
-  document.getElementById('btn-prev').disabled = (currentStep <= 1);
-  document.getElementById('btn-next').disabled = (currentStep >= totalSteps);
-  document.getElementById('step-indicator').textContent = '● ' + currentStep + '/' + totalSteps;
-}
-
-function renderEventCard(step) {
-  var card = document.getElementById('event-card');
-  if (!_events || step < 1 || step > _events.length) { card.style.display = 'none'; return; }
-  card.style.display = 'block';
-  var ev = _events[step - 1];
-  var typeLabels = {march: '行军', battle: '战斗', encamp: '扎营', retreat: '撤退'};
-  var typeLabel = typeLabels[ev.event_type] || ev.event_type;
-  var typeClass = 'event-type-' + ev.event_type;
-  var actorsHtml = (ev.actors || []).length > 0 ? '<span>🎯 ' + ev.actors.join('、') + '</span>' : '';
-  var placesHtml = (ev.places_involved || []).length > 0 ? '<span>📍 ' + ev.places_involved.join('、') + '</span>' : '';
-  card.innerHTML = '<span class="event-type ' + typeClass + '">' + typeLabel + '</span><strong>T' + ev.seq + '</strong>' +
-    '<div class="event-desc">' + escHtml(ev.description || '') + '</div>' +
-    '<div class="event-meta">' + actorsHtml + placesHtml + '</div>';
-}
-
-function renderUnitStateCard(step) {
-  var card = document.getElementById('unit-card');
-  if (!_unitStates || _unitStates.length === 0) { card.style.display = 'none'; return; }
-  var stepStates = _unitStates.filter(function(us) { return us.seq === step; });
-  if (stepStates.length === 0) { card.style.display = 'none'; return; }
-  card.style.display = 'block';
-  var statusLabels = { deploying: '待命', marching: '进军', engaging: '交战', retreating: '撤退', routing: '溃散' };
-  var statusColors = { deploying: '#f0ad4e', marching: '#3b82f6', engaging: '#ef4444', retreating: '#a855f7', routing: '#999' };
-  var rows = stepStates.map(function(us) {
-    var color = statusColors[us.status] || '#999';
-    var label = statusLabels[us.status] || us.status;
-    return '<div style="margin:6px 0;display:flex;align-items:flex-start;gap:8px">' +
-      '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0;margin-top:3px"></span>' +
-      '<div><strong>' + escHtml(us.unit_name) + '</strong> ' +
-      '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;background:' + color + ';color:#fff">' + label + '</span>' +
-      '<div style="font-size:12px;color:#555;margin-top:2px">' + (us.description || '') + '</div>' +
-      (us.location ? '<span style="font-size:11px;color:#888">📍 ' + escHtml(us.location) + '</span>' : '') +
-      '</div></div>';
-  });
-  card.innerHTML = '<div style="font-size:13px;font-weight:bold;margin-bottom:6px">⚔️ 部队动态 (T' + step + ')</div>' + rows.join('');
 }

@@ -70,15 +70,10 @@ function applyBasemap(name) {
 
 if (map) map.on('load', () => {
   applyBasemap('schematic');
-  // 必须在 CanvasRenderer.init 之前注册
-  CanvasRenderer.init(map);
 
-  // 加载古风 SVG 图标（game-icons.net 原版路径, 仅改色）
+  // 加载古风 SVG 图标
   _loadSvgIcon('fortress', 'assets/icons/fortress.svg', map);
   _loadSvgIcon('camp', 'assets/icons/camp.svg', map);
-  _loadSvgIcon('banner-song', 'assets/icons/banner-song.svg', map);
-  _loadSvgIcon('banner-jin', 'assets/icons/banner-jin.svg', map);
-  _loadSvgIcon('banner-engaging', 'assets/icons/banner-engaging.svg', map);
 
   const arrowCanvas = document.createElement('canvas');
   arrowCanvas.width = 24; arrowCanvas.height = 24;
@@ -123,50 +118,6 @@ if (map) map.on('load', () => {
     paint: {}
   });
 
-  map.addSource('unit-banners', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  map.addSource('unit-directions', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-
-  map.addLayer({
-    id: 'unit-banner-icon', type: 'symbol', source: 'unit-banners',
-    layout: {
-      'icon-image': ['match', ['get', 'status'],
-        'engaging', 'banner-engaging',
-        ['match', ['get', 'faction'], '宋', 'banner-song', '金', 'banner-jin', 'banner-song']
-      ],
-      'icon-size': 0.78,
-      'icon-allow-overlap': true,
-      'icon-ignore-placement': true
-    }
-  });
-  map.addLayer({
-    id: 'unit-banner-label', type: 'symbol', source: 'unit-banners',
-    layout: {
-      'text-field': ['get', 'unit_name'],
-      'text-offset': [0, 1.5],
-      'text-size': 14,
-      'text-anchor': 'top',
-      'text-allow-overlap': true,
-      'text-ignore-placement': true,
-      'text-optional': false
-    },
-    paint: { 'text-color': '#2c2c2c', 'text-halo-color': '#f2e8d5', 'text-halo-width': 2.5 }
-  });
-  map.addLayer({
-    id: 'unit-direction-line', type: 'line', source: 'unit-directions',
-    paint: {
-      'line-color': ['match', ['get', 'faction'], '宋', '#2b4c7e', '金', '#8b4513', '#5a7a6a'],
-      'line-width': 2, 'line-opacity': 0.7, 'line-dasharray': [6, 3]
-    }
-  });
-  map.addLayer({
-    id: 'unit-direction-arrow', type: 'symbol', source: 'unit-directions',
-    layout: {
-      'symbol-placement': 'line', 'symbol-spacing': 1,
-      'icon-image': 'arrowhead', 'icon-size': 0.5, 'icon-rotate': 90,
-      'icon-allow-overlap': true
-    }
-  });
-
   map.addSource('route-anchors', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   map.addLayer({
     id: 'route-anchors', type: 'circle', source: 'route-anchors',
@@ -192,9 +143,6 @@ if (map) map.on('load', () => {
   map.on('mouseleave', 'places-chgis', () => { map.getCanvas().style.cursor = ''; });
   map.on('mouseenter', 'places-llm', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'places-llm', () => { map.getCanvas().style.cursor = ''; });
-  map.on('click', 'unit-banner-icon', (e) => showUnitPopup(e));
-  map.on('mouseenter', 'unit-banner-icon', () => { map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', 'unit-banner-icon', () => { map.getCanvas().style.cursor = ''; });
 });
 
 // ── SVG 图标加载 ──
@@ -378,28 +326,12 @@ function _applyComicRouteStyle(scale) {
     if (map.getLayer('route-arrows')) {
       map.setLayoutProperty('route-arrows', 'icon-size', 0.96);
     }
-    if (map.getLayer('unit-direction-line')) {
-      map.setPaintProperty('unit-direction-line', 'line-width', 2.5);
-      map.setPaintProperty('unit-direction-line', 'line-dasharray', ['literal', [1, 0]]);
-      map.setPaintProperty('unit-direction-line', 'line-opacity', 0.85);
-    }
-    if (map.getLayer('unit-direction-arrow')) {
-      map.setLayoutProperty('unit-direction-arrow', 'icon-size', 0.6);
-    }
   } else {
     map.setPaintProperty('route-lines', 'line-width', 2.5);
     map.setLayoutProperty('route-lines', 'line-cap', 'butt');
     map.setPaintProperty('route-lines', 'line-dasharray', ['literal', [6, 3]]);
     if (map.getLayer('route-arrows')) {
       map.setLayoutProperty('route-arrows', 'icon-size', 0.8);
-    }
-    if (map.getLayer('unit-direction-line')) {
-      map.setPaintProperty('unit-direction-line', 'line-width', 2);
-      map.setPaintProperty('unit-direction-line', 'line-dasharray', ['literal', [6, 3]]);
-      map.setPaintProperty('unit-direction-line', 'line-opacity', 0.7);
-    }
-    if (map.getLayer('unit-direction-arrow')) {
-      map.setLayoutProperty('unit-direction-arrow', 'icon-size', 0.5);
     }
   }
 }
@@ -432,21 +364,9 @@ function updateMap(data) {
     f.geometry.type === 'Point' && f.properties?._feature_type !== 'unit_banner');
   const routeFeatures = geojsonFeatures.filter(f =>
     f.geometry.type === 'LineString' && f.properties?.type === 'route');
-  const unitBannerFeatures = geojsonFeatures.filter(f =>
-    f.properties?._feature_type === 'unit_banner');
-  const unitDirectionFeatures = geojsonFeatures.filter(f =>
-    f.properties?._feature_type === 'unit_direction');
-  // CanvasRenderer 接管部队渲染
-  CanvasRenderer.setData(unitBannerFeatures, unitDirectionFeatures, placeFeatures, data.scale);
-
   map.getSource('places').setData({ type: 'FeatureCollection', features: placeFeatures });
   map.getSource('routes').setData({ type: 'FeatureCollection', features: routeFeatures });
-  // 所有 scale 下均使用 CanvasRenderer 替代 MapLibre 部队/路线渲染
-  _safeLayout('unit-banner-icon', 'visibility', 'none');
-  _safeLayout('unit-banner-label', 'visibility', 'none');
-  _safeLayout('unit-direction-line', 'visibility', 'none');
-  _safeLayout('unit-direction-arrow', 'visibility', 'none');
-  _safeLayout('route-lines', 'visibility', 'none');
+  _safeLayout('route-lines', 'visibility', 'visible');
   _safeLayout('route-arrows', 'visibility', 'none');
   _safeLayout('route-anchors', 'visibility', 'none');
   var anchorFeatures = [];
@@ -500,10 +420,6 @@ function applyTimelineFilters() {
     map.setFilter('places-llm-dim', ['==', ['get', 'step'], -1]);
     map.setFilter('route-lines', null);
     map.setFilter('route-arrows', null);
-    _safeFilter('unit-banner-icon', null);
-    _safeFilter('unit-banner-label', null);
-    _safeFilter('unit-direction-line', null);
-    _safeFilter('unit-direction-arrow', null);
     return;
   }
   var activeFilter = ['any', ['<=', ['get', 'step'], currentStep], ['!', ['has', 'step']]];
@@ -514,27 +430,13 @@ function applyTimelineFilters() {
   map.setFilter('places-llm-dim', dimFilter);
   map.setFilter('route-lines', activeFilter);
   map.setFilter('route-arrows', activeFilter);
-  _safeFilter('unit-banner-icon', ['==', ['get', 'step'], currentStep]);
-  _safeFilter('unit-banner-label', ['==', ['get', 'step'], currentStep]);
-  _safeFilter('unit-direction-line', ['==', ['get', 'step'], currentStep]);
-  _safeFilter('unit-direction-arrow', ['==', ['get', 'step'], currentStep]);
-  _safeFilter('comic-unit-icon', ['==', ['get', 'step'], currentStep]);
-  _safeFilter('comic-unit-label', ['==', ['get', 'step'], currentStep]);
-  // CanvasRenderer 时间轴同步
-  CanvasRenderer.setTimeline(currentStep, totalSteps);
 }
 
 // ── 图层切换 ──
 function toggleLayer(layerId, visible) { if (!map) return; map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none'); }
 
 function toggleUnitLayers(visible) {
-  var v = visible ? 'visible' : 'none';
-  _safeLayout('unit-banner-icon', 'visibility', v);
-  _safeLayout('unit-banner-label', 'visibility', v);
-  _safeLayout('unit-direction-line', 'visibility', v);
-  _safeLayout('unit-direction-arrow', 'visibility', v);
-  _safeLayout('comic-unit-icon', 'visibility', v);
-  _safeLayout('comic-unit-label', 'visibility', v);
+  // No-op: 部队标记已移除
 }
 
 function showUnitPopup(e) {

@@ -71,9 +71,6 @@ if (typeof maplibregl === 'undefined') {
           <option value="唐">唐朝 (618-907)</option>
           <option value="明">明朝 (1368-1644)</option>
         </select>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap">
-          <input type="checkbox" id="mode-timeline" style="margin:0;cursor:pointer"> 时间轴模式
-        </label>
         <button class="btn" id="submit-btn" onclick="analyze()">生成地图</button>
       </div>
       <div class="pipeline-progress" id="pipeline-progress">
@@ -139,11 +136,7 @@ if (typeof maplibregl === 'undefined') {
   </div>
 </div>
 
-<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
 <script src="js/utils.js"></script>
-<script src="js/canvasRenderer.js"></script>
-<script src="js/terrainRenderer.js"></script>
-<script src="js/tacticalRenderer.js"></script>
 <script src="js/map.js"></script>
 <script src="js/app.js"></script>
 </body>

@@ -1,4 +1,4 @@
-"""提取管道编排服务：提取 → 地理编码 → 渲染 → 部队标记。
+"""提取管道编排服务：提取 → 地理编码 → 渲染。
 
 SSE 传输格式无关的纯业务逻辑，通过 generator yield PipelineStage 对象与路由层解耦。
 """
@@ -11,11 +11,10 @@ import uuid
 from collections.abc import Generator
 from dataclasses import dataclass
 
-from shaosongmap.extractor import extract, extract_timeline
+from shaosongmap.extractor import extract
 from shaosongmap.geocoder import geocode
 from shaosongmap.services.geo import _DYNASTY_YEARS
 from shaosongmap.services.geojson import build_routes, make_geojson
-from shaosongmap.services.unit_banner import make_unit_geojson
 
 logger = logging.getLogger(__name__)
 
@@ -31,38 +30,34 @@ class PipelineStage:
 def run_extract_pipeline(
     text: str,
     dynasty: str | None,
-    mode: str | None,
 ) -> Generator[PipelineStage, None, None]:
-    """执行提取管道：提取 → 地理编码 → 渲染 → 部队标记。
+    """执行提取管道：提取 → 地理编码 → 渲染。
 
     同步 generator，yield PipelineStage 对象。
-    路由层负责将 PipelineStage 序列化为 SSE 格式，便于独立测试。
+    路由层负责将 PipelineStage 序列化为 SSE 格式。
     """
     t_pipeline_start = time.perf_counter()
-    use_timeline = mode == 'timeline'
 
     # Stage 1: Extract
     t0 = time.perf_counter()
     try:
-        campaign = extract_timeline(text) if use_timeline else extract(text)
+        campaign = extract(text)
     except ValueError as e:
         yield PipelineStage('error', {'stage': 'extract', 'message': str(e)})
         return
 
     extract_elapsed = (time.perf_counter() - t0) * 1000
-    places_count = len(campaign.places)
-    routes_count = len(campaign.routes)
-    events_count = len(getattr(campaign, 'events', []))
-    extract_detail = f'提取结构数据 ({places_count}地名, {routes_count}路线'
-    if use_timeline:
-        extract_detail += f', {events_count}事件'
-    extract_detail += ')'
-    logger.info('Stage 1 提取: %s, 耗时 %.0fms', extract_detail, extract_elapsed)
+    logger.info(
+        'Stage 1 提取: %d地名, %d路线, 耗时 %.0fms',
+        len(campaign.places),
+        len(campaign.routes),
+        extract_elapsed,
+    )
     yield PipelineStage(
         'progress',
         {
             'stage': 'extract_done',
-            'detail': extract_detail,
+            'detail': f'提取结构数据 ({len(campaign.places)}地名, {len(campaign.routes)}路线)',
             'ok': True,
             'elapsed_ms': round(extract_elapsed),
         },
@@ -86,19 +81,17 @@ def run_extract_pipeline(
         return
 
     geocode_elapsed = (time.perf_counter() - t0) * 1000
-    chgis_count = sum(1 for f in features if f.source == 'chgis')
-    llm_count = sum(1 for f in features if f.source == 'llm_infer')
     logger.info(
         'Stage 2 地理编码: %d CHGIS + %d LLM, 耗时 %.0fms',
-        chgis_count,
-        llm_count,
+        sum(1 for f in features if f.source == 'chgis'),
+        sum(1 for f in features if f.source == 'llm_infer'),
         geocode_elapsed,
     )
     yield PipelineStage(
         'progress',
         {
             'stage': 'geocode_done',
-            'detail': f'匹配古地名 ({chgis_count} CHGIS + {llm_count} LLM推断)',
+            'detail': '匹配古地名',
             'ok': True,
             'elapsed_ms': round(geocode_elapsed),
         },
@@ -107,45 +100,30 @@ def run_extract_pipeline(
     # Stage 3: Build routes & GeoJSON
     t0 = time.perf_counter()
     route_lines = build_routes(campaign.routes, features)
-    timeline_events = getattr(campaign, 'events', []) if use_timeline else None
-    geojson = make_geojson(features, route_lines, events=timeline_events)
+    geojson = make_geojson(features, route_lines)
 
     render_elapsed = (time.perf_counter() - t0) * 1000
-    render_detail = f'渲染地图 ({len(features)}标记, {len(route_lines)}路线)'
-    if use_timeline and timeline_events:
-        render_detail += f', {len(timeline_events)}步骤'
-    logger.info('Stage 3 渲染: %s, 耗时 %.0fms', render_detail, render_elapsed)
+    logger.info(
+        'Stage 3 渲染: %d标记, %d路线, 耗时 %.0fms',
+        len(features),
+        len(route_lines),
+        render_elapsed,
+    )
     yield PipelineStage(
         'progress',
         {
             'stage': 'render_done',
-            'detail': render_detail,
+            'detail': f'渲染地图 ({len(features)}标记, {len(route_lines)}路线)',
             'ok': True,
             'elapsed_ms': round(render_elapsed),
         },
     )
 
-    # Stage 3.5: Unit GeoJSON (timeline mode only)
-    if use_timeline:
-        timeline_units = getattr(campaign, 'units', [])
-        timeline_unit_states = getattr(campaign, 'unit_states', [])
-        if timeline_units and timeline_unit_states:
-            unit_features = make_unit_geojson(
-                timeline_units,
-                timeline_unit_states,
-                features,
-                campaign.scale,
-            )
-            geojson['features'].extend(unit_features)
-
     # Final result
     total_elapsed = (time.perf_counter() - t_pipeline_start) * 1000
     logger.info(
-        '管道全部完成: 总耗时 %.0fms (提取 %.0f + 编码 %.0f + 渲染 %.0f)',
+        '管道全部完成: 总耗时 %.0fms',
         total_elapsed,
-        extract_elapsed,
-        geocode_elapsed,
-        render_elapsed,
     )
     result: dict = {
         'extract_id': uuid.uuid4().hex[:12],
@@ -154,7 +132,6 @@ def run_extract_pipeline(
         'features': [f.model_dump() for f in features],
         'routes': [r.model_dump() for r in route_lines],
         'geojson': geojson,
-        'scale': campaign.scale,
         'elapsed': {
             'extract_ms': round(extract_elapsed),
             'geocode_ms': round(geocode_elapsed),
@@ -162,11 +139,4 @@ def run_extract_pipeline(
             'total_ms': round(total_elapsed),
         },
     }
-    if use_timeline and timeline_events:
-        result['events'] = [e.model_dump() for e in timeline_events]
-        result['total_steps'] = len(timeline_events)
-        if timeline_units:
-            result['units'] = [u.model_dump() for u in timeline_units]
-        if timeline_unit_states:
-            result['unit_states'] = [us.model_dump() for us in timeline_unit_states]
     yield PipelineStage('result', result)

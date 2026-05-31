@@ -36,7 +36,7 @@ async def extract_campaign(body: ExtractRequest, request: Request):
             detail={'error': {'code': 'INVALID_INPUT', 'message': '战役文本不能为空'}},
         )
 
-    logger.info('提取请求: 文本长度=%d, mode=%s', len(body.text), body.mode or 'standard')
+    logger.info('提取请求: 文本长度=%d', len(body.text))
 
     async def event_stream():
         queue: asyncio.Queue[PipelineStage | None] = asyncio.Queue()
@@ -46,7 +46,7 @@ async def extract_campaign(body: ExtractRequest, request: Request):
         def _run_pipeline() -> None:
             nonlocal exc_info
             try:
-                for stage in run_extract_pipeline(body.text, body.dynasty, body.mode):
+                for stage in run_extract_pipeline(body.text, body.dynasty):
                     loop.call_soon_threadsafe(queue.put_nowait, stage)
             except Exception as exc:
                 exc_info = exc

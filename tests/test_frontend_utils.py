@@ -256,9 +256,6 @@ class TestFrontendFileSplit:
         local_scripts = [s for s in scripts if s.startswith('js/')]
         expected = [
             'js/utils.js',
-            'js/canvasRenderer.js',
-            'js/terrainRenderer.js',
-            'js/tacticalRenderer.js',
             'js/map.js',
             'js/app.js',
         ]

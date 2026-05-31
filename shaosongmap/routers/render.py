@@ -5,12 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import cast
 
 from fastapi import APIRouter, HTTPException
 
 from shaosongmap.geocoder import geocode
-from shaosongmap.models import CampaignExtract, Faction, MilitaryScale, Place, Route
+from shaosongmap.models import CampaignExtract, Faction, Place, Route
 from shaosongmap.schemas import ExtractResponse, RenderRequest
 from shaosongmap.services.geo import _DYNASTY_YEARS
 from shaosongmap.services.geojson import build_routes, make_geojson
@@ -52,7 +51,6 @@ async def render_modified(request: RenderRequest):
         factions=factions,
         places=places,
         routes=routes,
-        scale=cast(MilitaryScale | None, request.scale),
     )
 
     # Geocode
@@ -87,5 +85,4 @@ async def render_modified(request: RenderRequest):
         features=[f.model_dump() for f in features],
         routes=[r.model_dump() for r in route_lines],
         geojson=geojson,
-        scale=campaign.scale,
     )

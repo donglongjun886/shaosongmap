@@ -22,6 +22,8 @@
   <label>透明度 <input type="range" id="alpha" min="0.05" max="0.4" step="0.05" value="0.25" oninput="redraw()"></label>
   <label>线重 <input type="range" id="weight" min="0.3" max="3" step="0.1" value="1.2" oninput="redraw()"></label>
   <label>间距 <input type="range" id="gap" min="3" max="15" step="1" value="6" oninput="redraw()"></label>
+  <label>色块占比 <input type="range" id="sizeRatio" min="0.1" max="1.0" step="0.05" value="0.60" oninput="redraw()"></label>
+  <label>对角线(km) <input type="range" id="diagKm" min="1" max="50" step="1" value="8" oninput="redraw()"></label>
 </div>
 
 <h2>方案A: 放大地形色块</h2>
@@ -191,7 +193,7 @@
   }
 
   window.redraw = function () {
-    // 方案A：底图 + 大色块叠加
+    // 方案A：底图 + 大色块叠加（模拟生产逻辑）
     (function () {
       var c = document.getElementById('canvasA');
       var ctx = c.getContext('2d');
@@ -201,15 +203,20 @@
       ctx.clearRect(0, 0, cw, ch);
       ctx.fillStyle = '#f2e8d5'; ctx.fillRect(0, 0, cw, ch);
 
+      // 模拟生产逻辑：blockPx = diagonal * ratio * scale
+      // 其中 scale = cw / (diagonal * 1000)，所以 blockPx = cw * ratio
+      var ratio = Number(document.getElementById('sizeRatio').value);
+      var blockPx = cw * ratio;
+      console.log('[Debug] 对角线=' + document.getElementById('diagKm').value + 'km, ratio=' + ratio + ', blockPx=' + blockPx.toFixed(0) + 'px, canvas=' + cw + 'px');
+
       // 底图层：全画布中性土色，填补间隙
       var baseCfg = { fillStyle: 'hachure', color: '#c8b896', angle: 0 };
       drawTerrainBlock(rc, rg, cw / 2, ch / 2, cw * 0.95, ch * 0.95, baseCfg, _hash32('base-layer'));
 
       // 各地形色块叠加在底图上
-      var bigW = cw * 0.6, bigH = ch * 0.5;
       PLACES.forEach(function (p) {
         var cfg = TYPE_CONFIG[p.type];
-        drawTerrainBlock(rc, rg, p.cx, p.cy, bigW, bigH, cfg, _hash32('big-' + p.name));
+        drawTerrainBlock(rc, rg, p.cx, p.cy, blockPx, blockPx * 0.7, cfg, _hash32('big-' + p.name));
       });
       drawLabels(ctx, PLACES);
     })();

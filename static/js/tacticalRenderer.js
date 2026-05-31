@@ -35,7 +35,7 @@
     terrainAlpha: 0.25,
     terrainFillWeight: 1.2,
     terrainHachureGap: 6,
-    terrainSizeRatio: 0.10,  // 色块半径 = 数据对角线 × 此比例
+    terrainSizeRatio: 0.60,  // 色块半径 = 数据对角线 × 此比例
     terrainBase: { fillStyle: 'hachure', color: '#c8b896', alpha: 0.08, angle: 0 },
     terrainTypes: {
       mountain:      { fillStyle: 'cross-hatch', color: '#8b7765', angle: -45 },
@@ -241,7 +241,7 @@
       if (!cfg) return;
       // 米 → 像素（用投影中的 scale）
       blockPx = sizeMeters * (_proj ? _proj.scale : 1);
-      blockPx = Math.min(Math.max(blockPx, 30), 300); // 钳制 30~300px
+      blockPx = Math.min(Math.max(blockPx, 30), 800); // 钳制 30~800px
       blockPy = blockPx * 0.7;
       colorAlpha = THEME.terrainAlpha;
     }
@@ -600,7 +600,7 @@
     if (!canvas) { console.warn('[TacticalRenderer] setData 在 init 之前调用，跳过'); return; }
     geojsonData = data;
     totalSteps = data.total_steps || data.events ? (data.events || []).length : 0;
-    currentStep = totalSteps > 0 ? 1 : 0;  // 有时间轴时默认显示第一步
+    currentStep = totalSteps > 0 ? 1 : 0;
 
     var w = canvas.width / dpr;
     var h = canvas.height / dpr;

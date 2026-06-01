@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # 朝代时间范围映射
-_DYNASTY_YEARS: dict[str, tuple[int, int]] = {
+DYNASTY_YEARS: dict[str, tuple[int, int]] = {
     '北宋': (960, 1127),
     '南宋': (1127, 1279),
     '宋': (960, 1279),

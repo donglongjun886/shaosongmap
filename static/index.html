@@ -21,43 +21,14 @@ if (typeof maplibregl === 'undefined') {
   <div class="panel-header">
     <div class="panel-header-title">
       ShaosongMap
-      <small>输入战役文本，生成古代地图</small>
+      <small>输入历史文本，探索地理时空</small>
     </div>
     <button class="btn-back view-only" onclick="switchToInputMode()">← 返回编辑</button>
   </div>
   <div class="panel-body">
 
     <!-- 输入模式 -->
-    <div class="input-section input-only">
-      <div class="drop-wrap">
-        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-          <span class="hint">📷 拖拽截图到此处，或点击上传<br><span class="small">支持多张截图 / Ctrl+V 多次粘贴</span></span>
-        </div>
-        <input type="file" id="file-input" accept="image/png,image/jpeg" multiple style="display:none" onchange="handleFileSelect(event)">
-        <div class="thumb-list" id="thumb-list"></div>
-        <div class="batch-controls" id="batch-controls">
-          <button class="btn" id="batch-ocr-btn" onclick="startBatchOCR()">🔍 开始批量识别</button>
-          <button class="btn" style="background:#999" onclick="clearBatch()">清空</button>
-        </div>
-        <div class="ocr-progress" id="ocr-progress">
-          <div class="spinner"></div>
-          <div>
-            <span id="ocr-progress-text">正在识别截图文字…</span>
-            <div class="batch-progress-bar"><div class="batch-progress-fill" id="batch-progress-fill"></div></div>
-          </div>
-        </div>
-        <div class="batch-review" id="batch-review">
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <strong style="font-size:13px">📝 识别结果预览（可编辑校对）</strong>
-            <span style="font-size:11px;color:#999" id="review-stats"></span>
-          </div>
-          <textarea id="review-text"></textarea>
-          <div style="display:flex;gap:8px">
-            <button class="btn" id="confirm-btn" onclick="confirmBatchText()">✓ 确认，填入编辑器</button>
-            <button class="btn" style="background:#999" onclick="cancelReview()">取消</button>
-          </div>
-        </div>
-      </div>
+    <div class="input-only">
       <textarea id="text-input" placeholder='粘贴《绍宋》中的战役段落...
 
 示例：
@@ -82,27 +53,14 @@ if (typeof maplibregl === 'undefined') {
     </div>
 
     <!-- 查看模式 -->
-    <div class="view-section view-only">
-      <div id="scale-indicator" style="font-size:12px;color:#666"></div>
+    <div class="view-only">
       <div class="error" id="error-msg-view" style="display:none"></div>
       <div class="result-section" id="result-panel">
-        <div class="timeline-wrap" id="timeline-wrap">
-          <div class="timeline-bar" id="timeline-bar"></div>
-          <div class="step-controls">
-            <button class="step-btn" id="btn-prev" onclick="stepTo(currentStep - 1)">◀ 上一步</button>
-            <span class="step-indicator" id="step-indicator">● 1/1</span>
-            <button class="step-btn" id="btn-next" onclick="stepTo(currentStep + 1)">下一步 ▶</button>
-          </div>
-          <div class="event-card" id="event-card" style="display:none"></div>
-          <div class="event-card" id="unit-card" style="display:none;border-left:3px solid #3b82f6"></div>
-        </div>
-        <h3>📋 提取结果 <span style="font-weight:normal;font-size:11px;color:#999">(可编辑后重新渲染)</span></h3>
+        <h3>提取结果 <span style="font-weight:normal;font-size:11px;color:#999">(可编辑后重新渲染)</span></h3>
         <div id="campaign-info"></div>
-        <h3 style="margin-top:12px">📍 地名坐标</h3>
+        <h3 style="margin-top:12px">地名坐标</h3>
         <div id="places-list"></div>
-        <h3 style="margin-top:12px">🛤️ 行军路线</h3>
-        <div id="routes-list"></div>
-        <button class="render-btn" id="render-btn" disabled onclick="reRender()">🔄 重新渲染</button>
+        <button class="render-btn" id="render-btn" disabled onclick="reRender()">重新渲染</button>
       </div>
     </div>
 
@@ -111,12 +69,10 @@ if (typeof maplibregl === 'undefined') {
 
 <div class="map-wrap">
   <div id="map"></div>
-  <div class="map-guide" id="map-guide">输入文本或上传截图，生成战役地图</div>
-  <div class="comic-seal hidden" id="comic-seal"><svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="48" height="48" rx="2" fill="none" stroke="#c23b22" stroke-width="2.5"/><text id="seal-text" x="26" y="30" text-anchor="middle" fill="#c23b22" font-size="14" font-weight="bold" font-family="serif"></text></svg></div>
+
   <div class="legend">
-    <div class="legend-item"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--ink);background:transparent"></span> 城池 (CHGIS)</div>
-    <div class="legend-item"><span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid var(--ochre);vertical-align:middle"></span> 营寨 (LLM)</div>
-    <div class="legend-item"><span style="color:var(--vermillion)">- - -▷</span> 行军路线</div>
+    <div class="legend-item"><span style="display:inline-block;width:14px;height:14px;border:2px solid #3498db;background:transparent"></span> 城池 (CHGIS)</div>
+    <div class="legend-item"><span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid #f39c12;vertical-align:middle"></span> 营寨 (LLM)</div>
     <div class="legend-divider"></div>
     <label class="legend-item legend-toggle">
       <input type="checkbox" id="toggle-ancient" checked onchange="toggleLayer('place-labels-ancient', this.checked)">

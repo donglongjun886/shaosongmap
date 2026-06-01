@@ -19,6 +19,9 @@
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
       "Bash(uv run ruff:*)",
       "Bash(uv run mypy:*)",
       "Bash(uv run pytest:*)",
@@ -32,15 +35,14 @@
       "WebSearch",
       "WebFetch",
       "Glob",
-      "Grep"
+      "Grep",
+      "mcp__qwen-tools__review_snippet",
+      "mcp__qwen-tools__review_design"
     ],
     "ask": [
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
       "Bash(rm:*)",
       "Bash(git reset:*)",
-      "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git checkout:*)"
     ]
   }
 }

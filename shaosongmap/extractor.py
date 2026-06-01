@@ -1,32 +1,65 @@
-"""战役文本提取器：通过 DeepSeek API 将战役文本转换为结构化 JSON。"""
+"""地理实体提取器：通过 DeepSeek API 将历史文本转换为地理实体结构化 JSON。"""
 
 from __future__ import annotations
 
 import json
-import logging
 import re
 
 from openai import OpenAI
 
-from shaosongmap.models import CampaignExtract
+from shaosongmap.models import GeoEntityExtract
 
-_SYSTEM_PROMPT = """你是一位中国历史地理专家，从战役/行军文本中提取结构化JSON。
+_SYSTEM_PROMPT = """你是一位中国历史地理专家，从历史文本中提取纯地理实体信息。
 
 {
-  "campaign_name": "战役名称或null",
-  "factions": [{"name": "阵营名", "commanders": ["将领"], "troops": "兵力描述或null"}],
-  "places": [{"name": "古地名", "context": "原文片段", "place_type": "city|mountain_pass|river|mountain|region|battlefield|camp|null"}],
-  "routes": [{"from": "起点", "to": "终点", "via": ["途经地"]}]
+  "event_name": "事件/战役名称或null",
+  "dynasty": "朝代（如'南宋''北宋''唐'）或null",
+  "boundaries": [{"name": "边界名称", "description": "边界描述文本"}],
+  "person_places": [{"person": "人物名", "place": "地名", "relation": "关系（如'驻扎''出生''战死''行军经过'）"}],
+  "places": [{"name": "古地名", "context": "原文片段"}],
+  "scale": "tactical|battle|strategic或null"
 }
 
 规则：
-1. 只提取明确信息，地名用原文古称，兵力保留原文描述（如「三万」），不要编造或转换
-2. 仅从实际军事行动段落提取，忽略朝堂对话和议论。对话中假设性建议（如「臣以为应从X出兵」）不算实际行军
-3. 军队编制名（如「秦凤路大军」「泾原路兵马」）中的行政区划名不提取为places，仅在作为独立地理位置出现时才提取
-4. routes中的节点名称必须严格来自places列表中已提取的地名，不得使用places中不存在的地名
-5. 无军事行动时返回空places/routes
-6. 阵营标准化规则：factions的name必须使用标准历史朝代单字称谓（「宋」「金」「西夏」「辽」等），不得使用「我军」「敌军」「金军」「宋兵」等指代词或多字组合。若文本未明确提及阵营名称，必须根据历史常识推断（宋代背景下汉族将领→宋，女真/契丹将领→金）
-7. 仅输出合法JSON，不要包含任何Markdown标记或解释文本"""
+1. 只提取地理相关信息：边界/疆域、人物与地点关联、地名列表。不提取部队编制、兵力数量、行军路线、进攻方向
+2. 地名用原文古称，不要编造或转换
+3. 仅从实际发生的事件段落提取，忽略朝堂议论和假设性建议（如「臣以为应从X出兵」不算实际发生）
+4. boundaries 提取文中明确描述的疆域边界（如「宋金以淮河为界」），仅在原文有明确边界描述时填入
+5. person_places 提取人物直接关联的地点（如「岳飞驻襄阳」「完颜宗弼镇守汴京」「李纲生于华亭」），relation 字段简洁概括关系
+6. scale 判定标准：
+   - tactical：仅涉及1个具体城池/地点
+   - battle：涉及2个及以上具体地点，或在一个州/府范围内移动
+   - strategic：跨州/路/省的宏观描述，或涉及"江淮""关中""河北"等区域概念
+   无法判断时填 null
+7. places 与 person_places 关系：places 是文本中出现的所有独立地理位置的全集（包含已在 person_places 中出现的地名），person_places 是带人物关联的子集，两者可以有重复。places 仅提取作为独立地理位置出现的地名，军队编制名中的地名不提取。
+8. 列表字段（boundaries/person_places/places）无数据时必须返回空数组 []，不可返回 null
+9. 仅输出合法JSON，不要包含任何Markdown标记或解释文本
+
+反例（Negative Examples）：以下情况不提取为places——
+- 「建康府大军」中的「建康府」是军队编制名，不提取为place
+- 「秦凤路兵马」中的「秦凤路」是军队编制名，不提取为place
+- 「泾原路大军」中的「泾原路」是军队编制名，不提取为place
+只有当这些地名作为独立地理位置出现时才提取（如「岳飞进入秦凤路」中的「秦凤路」应提取）"""
+
+# 军队编制后缀模式，用于兜底过滤
+_MILITARY_SUFFIX_PATTERN = re.compile(
+    r'(大军|兵马|行营|都统司|厢军|乡兵|禁军|厢|砦兵|戍卒|义军|民兵|土军|边军|屯驻军|驻泊军)$'
+)
+
+
+def _filter_military_names(places: list[dict]) -> list[dict]:
+    """过滤掉名称后缀表明属于军队编制的'地名'。
+
+    作为 LLM prompt 约束的兜底保障，在结果返回后对每个地名做正则校验。
+    如果地名以军队编制后缀结尾，则从列表中移除。
+
+    Args:
+        places: LLM 返回的原始 places 列表，每项含 name 和 context 字段
+
+    Returns:
+        过滤后的 places 列表
+    """
+    return [p for p in places if not _MILITARY_SUFFIX_PATTERN.search(p.get('name', ''))]
 
 
 def _build_client() -> OpenAI:
@@ -38,46 +71,25 @@ def _build_client() -> OpenAI:
     return OpenAI(api_key=settings.deepseek_api_key, base_url=settings.deepseek_base_url)
 
 
-# 军队编制后缀模式
-_MILITARY_UNIT_SUFFIXES = re.compile(
-    r'(大军|兵马|部队|将士|诸军|各部|行营|都统司|厢军|乡兵|蕃兵|禁军|厢兵|屯驻军|驻泊军|就粮军|系将兵|不系将兵|土兵|弓手|义勇|保甲|乡弓手|寨兵|水军|步军|马军|砦兵|戍卒|劲卒|锐卒|精卒|义军|忠义军|义士|民兵|土军|边军|戍兵|客军|正军|裨将|偏师|偏裨|游师)'
-)
+def extract(text: str, model: str = 'deepseek-chat') -> GeoEntityExtract:
+    """从一段历史文本中提取地理实体数据。
 
-
-def _filter_military_unit_places(places: list[dict]) -> list[dict]:
-    """过滤掉上下文表明属于军队编制名的地名。"""
-    logger = logging.getLogger(__name__)
-    filtered = []
-    for place in places:
-        name = place.get('name', '')
-        context = place.get('context', '')
-        if not name or not context:
-            filtered.append(place)
-            continue
-        pattern = re.escape(name) + r'\s*' + _MILITARY_UNIT_SUFFIXES.pattern
-        if re.search(pattern, context):
-            logger.info('过滤军队编制名: %s (上下文: %s)', name, context)
-            continue
-        filtered.append(place)
-    return filtered
-
-
-def extract(text: str, model: str = 'deepseek-chat') -> CampaignExtract:
-    """从一段战役文本中提取结构化数据。
+    提取内容：事件名称、朝代、边界/疆域、人物→地点关联、地名列表、地图尺度。
+    不提取部队编制、兵力数量、行军路线、进攻方向。
 
     Args:
-        text: 战役/行军文本
+        text: 历史文本
         model: DeepSeek 模型名称，默认 deepseek-chat
 
     Returns:
-        CampaignExtract: 提取的结构化战役数据
+        GeoEntityExtract: 提取的地理实体数据（边界、人物地点关联、地名列表）
 
     Raises:
         ValueError: 文本为空或模型返回格式不合法
     """
     text = text.strip()
     if not text:
-        raise ValueError('战役文本不能为空')
+        raise ValueError('历史文本不能为空')
 
     client = _build_client()
     response = client.chat.completions.create(
@@ -95,12 +107,16 @@ def extract(text: str, model: str = 'deepseek-chat') -> CampaignExtract:
     if not raw:
         raise ValueError('DeepSeek API 返回空响应')
 
+    # 清洗 Markdown 代码块包裹（如 ```json ... ```）
+    raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw.strip(), flags=re.MULTILINE)
+
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f'DeepSeek 返回非 JSON 内容: {raw[:200]}') from e
 
-    if 'places' in data:
-        data['places'] = _filter_military_unit_places(data['places'])
+    # 兜底过滤：LLM 偶尔仍会将军队编制名误提取为地名
+    if 'places' in data and isinstance(data['places'], list):
+        data['places'] = _filter_military_names(data['places'])
 
-    return CampaignExtract.model_validate(data)
+    return GeoEntityExtract.model_validate(data)

@@ -19,21 +19,28 @@ class ExtractResponse(BaseModel):
     """提取响应体。"""
 
     extract_id: str = Field(description='提取唯一标识')
-    campaign_name: str | None
-    factions: list[dict]
+    event_name: str | None
+    dynasty: str | None = Field(default=None, description='朝代')
+    boundaries: list[dict]
+    person_places: list[dict]
+    places: list[dict] = Field(default_factory=list, description='原始地名列表 [{name, context}]')
     features: list[dict]
-    routes: list[dict]
     geojson: dict = Field(description='GeoJSON FeatureCollection，用于前端地图渲染')
+    scale: str | None = Field(default=None, description='地图尺度: tactical/battle/strategic')
+    elapsed: dict | None = Field(default=None, description='各阶段耗时(ms)')
 
 
 class RenderRequest(BaseModel):
     """重新渲染请求体：用户修正后的提取数据。"""
 
-    campaign_name: str | None = Field(default=None, description='战役名称')
-    factions: list[dict] = Field(default_factory=list, description='阵营列表')
+    event_name: str | None = Field(default=None, description='事件/战役名称')
+    boundaries: list[dict] = Field(default_factory=list, description='边界/疆域列表')
     places: list[dict] = Field(default_factory=list, description='地名列表 [{name, context}]')
-    routes: list[dict] = Field(default_factory=list, description='行军路线 [{from, to, via}]')
+    person_places: list[dict] = Field(
+        default_factory=list, description='人物→地点关联 [{person, place, relation}]'
+    )
     dynasty: str | None = Field(default=None, description='朝代提示')
+    scale: str | None = Field(default=None, description='地图尺度: tactical/battle/strategic')
 
 
 class ErrorDetail(BaseModel):
@@ -48,11 +55,3 @@ class ErrorResponse(BaseModel):
     """统一错误响应外层。"""
 
     error: ErrorDetail
-
-
-class OcrResponse(BaseModel):
-    """OCR 响应体。"""
-
-    text: str = Field(description='清洗后的连续文本段落')
-    raw_lines: int = Field(description='OCR 原始识别行数')
-    elapsed_ms: float = Field(description='OCR 耗时（毫秒）')

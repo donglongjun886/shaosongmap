@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D地形调试页面 - ShaosongMap</title>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #1a1a1a; }
+  #map { width: 100vw; height: 100vh; }
+  .info {
+    position: fixed; bottom: 20px; left: 20px;
+    background: rgba(0,0,0,0.75); color: #fff; padding: 12px 18px;
+    border-radius: 8px; font-size: 13px; line-height: 1.6;
+    pointer-events: none; z-index: 10;
+  }
+  .info strong { color: #ffd666; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="info">
+  <strong>3D地形调试</strong><br>
+	  滚轮 = 缩放 | 左键拖拽 = 平移<br>
+  杭州 / 南京 / 扬州 / 苏州 / 武汉
+</div>
+<script>
+  const MAPTILER_KEY = 'Tr1HFFr6SuE3gBKboy7T';
+
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: `https://api.maptiler.com/maps/topo-v2/style.json?key=${MAPTILER_KEY}`,
+    center: [119, 31.5],
+    zoom: 7,
+    maxPitch: 75,
+    maxBearing: 0,
+    pitch: 0,
+    attributionControl: false
+  });
+
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: true }), 'top-right');
+
+  map.on('load', () => {
+    // ── 3D 地形 ──
+    map.addSource('terrain-dem', {
+      type: 'raster-dem',
+      url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`
+    });
+    map.setTerrain({ source: 'terrain-dem', exaggeration: 1.6 });
+
+    // ── 城市标记 ──
+    const cities = {
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [120.15, 30.28] }, properties: { name: '杭州', color: '#e74c3c' } },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [118.78, 32.05] }, properties: { name: '南京', color: '#3498db' } },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [119.42, 32.39] }, properties: { name: '扬州', color: '#2ecc71' } },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [120.58, 31.30] }, properties: { name: '苏州', color: '#f39c12' } },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [114.30, 30.60] }, properties: { name: '武汉', color: '#9b59b6' } }
+      ]
+    };
+
+    map.addSource('debug-cities', { type: 'geojson', data: cities });
+
+    map.addLayer({
+      id: 'debug-city-dots', type: 'circle', source: 'debug-cities',
+      paint: {
+        'circle-radius': 8,
+        'circle-color': ['get', 'color'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#fff'
+      }
+    });
+
+    map.addLayer({
+      id: 'debug-city-labels', type: 'symbol', source: 'debug-cities',
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-offset': [0, 1.8],
+        'text-size': 16,
+        'text-font': ['Noto Sans SC Regular', 'Open Sans Regular']
+      },
+      paint: {
+        'text-color': '#fff',
+        'text-halo-color': ['get', 'color'],
+        'text-halo-width': 3
+      }
+    });
+
+  });
+
+  // 点击城市弹窗
+  map.on('click', 'debug-city-dots', (e) => {
+    const props = e.features[0].properties;
+    new maplibregl.Popup({ offset: 14 })
+      .setLngLat(e.lngLat)
+      .setHTML(`<strong>${props.name}</strong>`)
+      .addTo(map);
+  });
+  map.on('mouseenter', 'debug-city-dots', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'debug-city-dots', () => { map.getCanvas().style.cursor = ''; });
+</script>
+</body>
+</html>

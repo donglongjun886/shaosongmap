@@ -14,27 +14,31 @@ def test_render_success():
     resp = client.post(
         '/api/v1/render',
         json={
-            'campaign_name': '测试战役',
-            'factions': [
-                {'name': '宋军', 'commanders': ['岳飞'], 'troops': '三万'},
-                {'name': '金军', 'commanders': ['完颜宗弼'], 'troops': '五万'},
+            'event_name': '测试战役',
+            'dynasty': None,
+            'boundaries': [
+                {'name': '宋金边界', 'description': '淮河一线'},
             ],
             'places': [
                 {'name': '襄阳', 'context': '自襄阳出发'},
                 {'name': '汴京', 'context': '直驱汴京'},
             ],
-            'routes': [
-                {'from': '襄阳', 'to': '汴京'},
+            'person_places': [
+                {'person': '岳飞', 'place': '襄阳', 'relation': '驻扎'},
+                {'person': '完颜宗弼', 'place': '汴京', 'relation': '镇守'},
             ],
+            'scale': 'battle',
         },
     )
     assert resp.status_code == 200
     data = resp.json()
     assert 'extract_id' in data
-    assert data['campaign_name'] == '测试战役'
-    assert len(data['factions']) == 2
+    assert data['event_name'] == '测试战役'
+    assert len(data['boundaries']) == 1
     assert len(data['features']) == 2
+    assert len(data['person_places']) == 2
     assert data['geojson']['type'] == 'FeatureCollection'
+    assert data['scale'] == 'battle'
 
 
 def test_render_empty_places():
@@ -42,15 +46,15 @@ def test_render_empty_places():
     resp = client.post(
         '/api/v1/render',
         json={
-            'factions': [{'name': '宋军', 'commanders': ['岳飞'], 'troops': '三万'}],
+            'dynasty': None,
+            'boundaries': [{'name': '宋金边界', 'description': '淮河'}],
             'places': [],
-            'routes': [],
+            'person_places': [],
         },
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data['features'] == []
-    assert data['routes'] == []
 
 
 def test_render_invalid_types():
@@ -59,23 +63,23 @@ def test_render_invalid_types():
         '/api/v1/render',
         json={
             'places': 'not a list',
-            'routes': 'not a list',
         },
     )
     assert resp.status_code == 422
 
 
-def test_render_no_routes():
-    """无行军路线时正常返回。"""
+def test_render_single_place():
+    """单地名正常返回。"""
     resp = client.post(
         '/api/v1/render',
         json={
-            'factions': [],
+            'dynasty': None,
+            'boundaries': [],
             'places': [{'name': '襄阳', 'context': ''}],
-            'routes': [],
+            'person_places': [],
         },
     )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data['features']) == 1
-    assert data['routes'] == []
+    assert data['geojson']['type'] == 'FeatureCollection'

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from starlette.responses import JSONResponse
 
 router = APIRouter(tags=['health'])
@@ -19,21 +19,14 @@ async def health():
 
 
 @router.get('/ready')
-async def ready(request: Request):
-    """Readiness 就绪检查：配置和 OCR 模型是否就绪。"""
+async def ready():
+    """Readiness 就绪检查：配置是否加载完毕。"""
     from shaosongmap.config import settings
 
     if settings is None or not settings.deepseek_api_key:
         return JSONResponse(
             status_code=503,
             content={'status': 'not_ready', 'reason': '配置未加载或 deepseek_api_key 缺失'},
-        )
-
-    ocr_ready = getattr(request.app.state, 'ocr_ready', False)
-    if not ocr_ready:
-        return JSONResponse(
-            status_code=503,
-            content={'status': 'not_ready', 'reason': 'OCR 模型尚未加载'},
         )
 
     return {'status': 'ready'}

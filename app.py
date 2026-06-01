@@ -15,10 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from shaosongmap.config import Settings, limiter
+import shaosongmap.config as config_mod
+from shaosongmap.config import limiter
 from shaosongmap.routers.extract import router as extract_router
 from shaosongmap.routers.health import router as health_router
-from shaosongmap.routers.ocr import router as ocr_router
 from shaosongmap.routers.render import router as render_router
 
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('request_id', default='-')
@@ -59,12 +59,21 @@ def _setup_logging(log_level: str, log_format: str) -> None:
     logging.root.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
 
+_CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://api.maptiler.com; "
+    "connect-src 'self' https://unpkg.com https://api.maptiler.com; "
+    "font-src 'self' https://cdn.jsdelivr.net; "
+    "worker-src 'self' blob:"
+)
+
+
 async def _init_settings():
     """初始化全局配置单例，启动时校验必填项。"""
-    from shaosongmap.config import Settings
-
     try:
-        s = Settings()  # type: ignore[call-arg]
+        s = config_mod.Settings()  # type: ignore[call-arg]
     except Exception as e:
         logging.error('配置校验失败: %s', e)
         raise SystemExit(1) from e
@@ -73,36 +82,26 @@ async def _init_settings():
         logging.error('配置校验失败: DEEPSEEK_API_KEY 未设置')
         raise SystemExit(1)
 
-    import shaosongmap.config as config_mod
-
     config_mod.settings = s
     return s
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    """应用生命周期：启动时校验配置并预加载 PaddleOCR 模型，关闭时释放资源。"""
+    """应用生命周期：启动时校验配置，关闭时释放资源。"""
     s = await _init_settings()
     _setup_logging(s.log_level, s.log_format)
 
     logger = logging.getLogger(__name__)
-    logger.info('配置校验通过，正在预加载 PaddleOCR 模型...')
-
-    from shaosongmap.ocr import _get_ocr
-
-    _get_ocr()
-    _app.state.ocr_ready = True
-    logger.info('PaddleOCR 模型预热完成')
+    logger.info('配置校验通过')
     yield
     # --- 关闭阶段 ---
-    logger.info('正在关闭应用，释放资源...')
-    _app.state.ocr_ready = False
     logger.info('应用已关闭')
 
 
 app = FastAPI(
     title='ShaosongMap',
-    description='让历史小说读者「边读边看地图」——输入战役段落，生成古代地图',
+    description='让历史读者「边读边看地图」——输入历史文本，探索地理时空',
     version='0.1.0',
     lifespan=_lifespan,
 )
@@ -117,17 +116,6 @@ async def _request_id_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers['X-Request-ID'] = request_id
     return response
-
-
-_CSP_POLICY = (
-    "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
-    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org; "
-    "connect-src 'self' https://unpkg.com; "
-    "font-src 'self' https://cdn.jsdelivr.net; "
-    "worker-src 'self' blob:"
-)
 
 
 @app.middleware('http')
@@ -151,8 +139,8 @@ async def _http_exception_handler(_request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={'detail': exc.detail})
 
 
-# CORS 中间件：直接在模块加载时读取配置（pydantic-settings 已支持 .env）
-_cors_origins = Settings().cors_origins
+# CORS 中间件（必须在模块级添加，不能在 lifespan 中）
+_cors_origins = config_mod.Settings().cors_origins  # type: ignore[call-arg]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -161,10 +149,22 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+
 app.include_router(extract_router)
 app.include_router(health_router)
-app.include_router(ocr_router)
 app.include_router(render_router)
+
+
+@app.get('/api/v1/config')
+async def get_config():
+    """返回前端需要的配置项（如 MapTiler key）。"""
+    if config_mod.settings is None:
+        raise HTTPException(status_code=500, detail={'error': '服务配置未初始化，请稍后重试'})
+
+    if not config_mod.settings.maptiler_key:
+        logging.getLogger(__name__).warning('maptiler_key 未配置，前端将使用 OSM 后备方案')
+
+    return {'maptiler_key': config_mod.settings.maptiler_key}
 
 
 # 挂载静态文件（必须在所有路由之后）

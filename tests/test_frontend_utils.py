@@ -30,17 +30,6 @@ def darken_color(hex_color: str, factor: float) -> str:
     return '#' + ''.join(f'{c:02x}' for c in [dr, dg, db])
 
 
-def faction_color(faction: str) -> str:
-    """等价于 JS 版 _factionColor(faction)"""
-    if not faction:
-        return '#2c2c2c'
-    if '宋' in faction:
-        return '#2b4c7e'
-    if '金' in faction:
-        return '#c23b22'
-    return '#2c2c2c'
-
-
 def compute_data_diagonal(features: list[dict]) -> float:
     """等价于 JS 版 _computeDataDiagonal(features)"""
     lngs = []
@@ -58,18 +47,6 @@ def compute_data_diagonal(features: list[dict]) -> float:
     dx = (max_lng - min_lng) * 111320 * math.cos(mid_lat)
     dy = (max_lat - min_lat) * 111320
     return math.sqrt(dx * dx + dy * dy)
-
-
-def terrain_color_for_type(place_type: str) -> str | None:
-    """等价于 JS 版 _terrainColorForType(placeType)"""
-    mapping = {
-        'mountain': 'rgba(139,119,101,0.12)',
-        'mountain_pass': 'rgba(139,119,101,0.12)',
-        'river': 'rgba(100,149,237,0.15)',
-        'valley': 'rgba(218,195,125,0.12)',
-        'region': 'rgba(218,195,125,0.12)',
-    }
-    return mapping.get(place_type)
 
 
 # ── 测试用例 ──
@@ -117,33 +94,6 @@ class TestDarkenColor:
         assert r == round(0x2B * 0.85)
 
 
-class TestFactionColor:
-    def test_song_keyword(self):
-        assert faction_color('宋军') == '#2b4c7e'
-        assert faction_color('南宋') == '#2b4c7e'
-        assert faction_color('北宋禁军') == '#2b4c7e'
-
-    def test_jin_keyword(self):
-        assert faction_color('金军') == '#c23b22'
-        assert faction_color('金国骑兵') == '#c23b22'
-
-    def test_empty_faction(self):
-        assert faction_color('') == '#2c2c2c'
-
-    def test_none_string(self):
-        """JS: !faction → false for '' and null/undefined.
-        空字符串在 Python truthiness 中等价于 JS 的 !faction 判断."""
-        assert faction_color('') == '#2c2c2c'
-
-    def test_unknown_faction(self):
-        assert faction_color('蒙古') == '#2c2c2c'
-        assert faction_color('西夏') == '#2c2c2c'
-
-    def test_substring_match(self):
-        """验证 substring 匹配行为：indexOf >= 0"""
-        assert faction_color('金') == '#c23b22'
-
-
 class TestComputeDataDiagonal:
     def test_single_feature(self):
         features = [{'geometry': {'coordinates': [110, 30]}}]
@@ -182,31 +132,6 @@ class TestComputeDataDiagonal:
         ]
         dist = compute_data_diagonal(features)
         assert 40_000 < dist < 60_000
-
-
-class TestTerrainColorForType:
-    def test_mountain(self):
-        assert terrain_color_for_type('mountain') == 'rgba(139,119,101,0.12)'
-
-    def test_mountain_pass(self):
-        assert terrain_color_for_type('mountain_pass') == 'rgba(139,119,101,0.12)'
-
-    def test_river(self):
-        assert terrain_color_for_type('river') == 'rgba(100,149,237,0.15)'
-
-    def test_valley(self):
-        assert terrain_color_for_type('valley') == 'rgba(218,195,125,0.12)'
-
-    def test_region(self):
-        assert terrain_color_for_type('region') == 'rgba(218,195,125,0.12)'
-
-    def test_unknown_type(self):
-        assert terrain_color_for_type('city') is None
-        assert terrain_color_for_type('') is None
-
-    def test_case_sensitive(self):
-        """JS 版本是严格 key 匹配，区分大小写"""
-        assert terrain_color_for_type('Mountain') is None
 
 
 # ── 前端拆分集成验证 ──
@@ -249,7 +174,7 @@ class TestFrontendFileSplit:
         assert 'href="css/map.css"' in resp.text
 
     def test_js_loads_in_correct_order(self):
-        """JS 按 utils → canvasRenderer → terrainRenderer → tacticalRenderer → map → app 顺序加载。"""
+        """JS 按 utils → map → app 顺序加载。"""
         resp = _client.get('/')
         scripts = re.findall(r'<script src="([^"]+)"', resp.text)
         # 过滤出本地 JS（非 CDN）
@@ -279,7 +204,6 @@ class TestFrontendFileSplit:
         resp = _client.get('/js/utils.js')
         assert resp.status_code == 200
         assert 'escHtml' in resp.text
-        assert '_darkenColor' in resp.text
 
     def test_map_js_accessible(self):
         """map.js 可正常访问。"""
@@ -299,24 +223,23 @@ class TestFrontendFileSplit:
         """DOM 元素 id 保持不变，确保 JS 选择器兼容。"""
         resp = _client.get('/')
         required_ids = [
+            'error-toast',
             'text-input',
+            'dynasty-select',
             'submit-btn',
+            'pipeline-progress',
+            'stage-extract',
+            'stage-geocode',
+            'stage-render',
+            'error-msg-input',
+            'error-msg-view',
             'result-panel',
-            'map',
-            'map-guide',
-            'comic-seal',
-            'timeline-wrap',
-            'timeline-bar',
-            'event-card',
-            'places-list',
-            'routes-list',
             'campaign-info',
-            'drop-zone',
-            'file-input',
-            'thumb-list',
-            'batch-controls',
-            'ocr-progress',
-            'batch-review',
+            'places-list',
+            'render-btn',
+            'map',
+            'toggle-ancient',
+            'toggle-modern',
         ]
         for id_ in required_ids:
             assert f'id="{id_}"' in resp.text, f'缺少 DOM 元素 id="{id_}"'

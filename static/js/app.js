@@ -1,4 +1,4 @@
-// ShaosongMap 交互层：OCR、提取、编辑、时间轴、键盘
+// ShaosongMap 交互层：提取、编辑、键盘
 // 依赖：utils.js → map.js → app.js（按此顺序加载）
 
 // ── 全局报错捕获 ──
@@ -18,216 +18,17 @@ window.addEventListener('unhandledrejection', function(e) {
 // ── 模式切换 ──
 function switchToViewMode() {
   document.body.classList.add('mode-view');
-  document.getElementById('map-guide').classList.add('hidden');
   document.getElementById('error-msg-view').style.display = 'none';
 }
 
 function switchToInputMode() {
   document.body.classList.remove('mode-view');
-  document.getElementById('map-guide').classList.remove('hidden');
   document.getElementById('error-msg-input').style.display = 'none';
-}
-
-// ── 多截图批量处理 ──
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const ocrProgress = document.getElementById('ocr-progress');
-const ocrProgressText = document.getElementById('ocr-progress-text');
-
-let _imageBatch = [];
-
-dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
-dropZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropZone.classList.remove('dragover');
-  if (e.dataTransfer.files.length > 0) {
-    for (const file of e.dataTransfer.files) addToBatch(file);
-  }
-});
-
-document.addEventListener('paste', (e) => {
-  if (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT') return;
-  const items = e.clipboardData?.items;
-  if (!items) return;
-  for (const item of items) {
-    if (item.type.startsWith('image/')) {
-      e.preventDefault();
-      const file = item.getAsFile();
-      if (file) addToBatch(file);
-    }
-  }
-});
-
-function handleFileSelect(e) {
-  for (const file of e.target.files) addToBatch(file);
-  fileInput.value = '';
-}
-
-async function addToBatch(file) {
-  if (!(/^image\/(png|jpeg)$/.test(file.type))) { showError('仅支持 PNG 和 JPEG 格式'); return; }
-  if (_imageBatch.length >= 10) { showError('每次最多添加 10 张截图'); return; }
-  var errorEl = document.getElementById('error-msg-input');
-  errorEl.style.display = 'none';
-  const resized = await resizeImage(file, 1920);
-  if (_imageBatch.length >= 10) { showError('每次最多添加 10 张截图'); return; }
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = () => reject(new Error('文件读取失败'));
-    reader.readAsDataURL(resized);
-  });
-  _imageBatch.push({ blob: resized, dataUrl });
-  renderThumbnails();
-}
-
-function removeFromBatch(index) { _imageBatch.splice(index, 1); renderThumbnails(); }
-
-function renderThumbnails() {
-  const list = document.getElementById('thumb-list');
-  const controls = document.getElementById('batch-controls');
-  if (_imageBatch.length === 0) { list.innerHTML = ''; controls.classList.remove('active'); return; }
-  list.innerHTML = _imageBatch.map((item, i) =>
-    `<div class="thumb-item">
-      <img src="${item.dataUrl}" alt="截图${i + 1}">
-      <span class="thumb-idx">${i + 1}</span>
-      <button class="thumb-del" onclick="event.stopPropagation();removeFromBatch(${i})" title="删除">×</button>
-    </div>`
-  ).join('');
-  controls.classList.add('active');
-}
-
-function clearBatch() {
-  _imageBatch = [];
-  renderThumbnails();
-  document.getElementById('batch-review').classList.remove('active');
-  document.getElementById('error-msg-input').style.display = 'none';
-  ocrProgress.classList.remove('active');
-}
-
-async function resizeImage(file, maxDim) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width <= maxDim && height <= maxDim) { resolve(file); return; }
-      const ratio = Math.min(maxDim / width, maxDim / height);
-      width = Math.round(width * ratio);
-      height = Math.round(height * ratio);
-      const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error('Canvas 转换失败')); }, file.type, 0.85);
-    };
-    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
-    img.src = url;
-  });
-}
-
-async function startBatchOCR() {
-  if (_imageBatch.length === 0) return;
-  var errorEl = document.getElementById('error-msg-input');
-  errorEl.style.display = 'none';
-  ocrProgress.classList.add('active');
-  ocrProgressText.textContent = `正在识别第 1/${_imageBatch.length} 张截图…`;
-  document.getElementById('batch-progress-fill').style.width = '0%';
-  document.getElementById('batch-controls').classList.remove('active');
-  document.querySelectorAll('.thumb-status').forEach(el => el.remove());
-  _abortPrevious();
-  const controller = new AbortController();
-  const currentController = controller;
-  _activeAbortController = controller;
-
-  try {
-    const formData = new FormData();
-    _imageBatch.forEach((item, i) => formData.append('files', item.blob, `screenshot_${i + 1}.png`));
-    const resp = await fetch('/api/v1/ocr/batch', { method: 'POST', body: formData, signal: controller.signal });
-    if (!resp.ok) { const err = await resp.json(); const msg = err.error?.message || err.detail || '批量识别失败'; throw new Error(msg); }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      if (controller.signal.aborted) { return; }
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const normalized = buffer.replace(/\r/g, '');
-      const lines = normalized.split('\n');
-      buffer = lines.pop() || '';
-      let eventType = 'message', eventData = '';
-      for (const line of lines) {
-        if (line === '') {
-          if (eventData) { try { handleBatchSSE(eventType, JSON.parse(eventData)); } catch (_) {} }
-          eventType = 'message'; eventData = '';
-        } else if (line.startsWith('event:')) {
-          eventType = line.slice(6).trim();
-        } else if (line.startsWith('data:')) {
-          eventData += (eventData ? '\n' : '') + line.slice(5).trim();
-        }
-      }
-    }
-  } catch (e) {
-    if (e.name === 'AbortError') return;
-    showError(e.message || '批量识别失败，请重试');
-    ocrProgress.classList.remove('active');
-    document.getElementById('batch-controls').classList.add('active');
-  } finally {
-    if (_activeAbortController === currentController) { _activeAbortController = null; }
-  }
-}
-
-function handleBatchSSE(type, data) {
-  if (type === 'progress') {
-    const pct = Math.round((data.current / data.total) * 100);
-    ocrProgressText.textContent = `正在识别第 ${data.current}/${data.total} 张截图（${data.char_count} 字）…`;
-    document.getElementById('batch-progress-fill').style.width = pct + '%';
-    const items = document.querySelectorAll('.thumb-item');
-    if (items[data.current - 1]) {
-      const status = document.createElement('div');
-      status.className = 'thumb-status';
-      status.textContent = '✓ ' + data.char_count + '字';
-      items[data.current - 1].appendChild(status);
-    }
-  } else if (type === 'merge') {
-    ocrProgressText.textContent = `去重拼接完成：${data.original_chars} → ${data.merged_chars} 字（去除 ${data.removed_dup} 字重复）`;
-  } else if (type === 'complete') {
-    ocrProgress.classList.remove('active');
-    document.getElementById('review-text').value = data.text;
-    document.getElementById('review-stats').textContent = `共 ${data.text.length} 字`;
-    document.getElementById('batch-review').classList.add('active');
-  } else if (type === 'error') {
-    showError(data.message || '批量识别失败');
-    ocrProgress.classList.remove('active');
-    document.getElementById('batch-controls').classList.add('active');
-  }
-}
-
-function confirmBatchText() {
-  const text = document.getElementById('review-text').value.trim();
-  if (!text) { showError('识别结果为空白，请重新截图'); return; }
-  document.getElementById('text-input').value = text;
-  document.getElementById('batch-review').classList.remove('active');
-  clearBatch();
-}
-
-function cancelReview() {
-  document.getElementById('batch-review').classList.remove('active');
-  document.getElementById('batch-controls').classList.add('active');
 }
 
 // ── 状态 ──
 let _lastExtractData = null;
 let _dataModified = false;
-let _activeAbortController = null;
-function _abortPrevious() {
-  if (_activeAbortController) {
-    _activeAbortController.abort();
-    _activeAbortController = null;
-  }
-}
 
 // ── 通用 error & 分阶段进度条 ──
 function showError(msg) {
@@ -270,10 +71,10 @@ function setStageState(stage, state) {
   }
 }
 
-// ── SSE 提取 ──
+// ── 提取（普通 fetch 请求/响应） ──
 async function analyze() {
   const text = document.getElementById('text-input').value.trim();
-  if (!text) { showError('请输入战役文本或上传截图'); return; }
+  if (!text) { showError('请输入历史文本'); return; }
   const submitBtn = document.getElementById('submit-btn');
   submitBtn.disabled = true;
   document.getElementById('error-msg-input').style.display = 'none';
@@ -282,136 +83,74 @@ async function analyze() {
 
   const dynasty = document.getElementById('dynasty-select')?.value || '';
 
-  _abortPrevious();
-  const controller = new AbortController();
-  const currentController = controller;
-  _activeAbortController = controller;
-
   try {
     const resp = await fetch('/api/v1/extract', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, dynasty: dynasty || null }),
-      signal: controller.signal
+      body: JSON.stringify({ text, dynasty: dynasty || null })
     });
     if (!resp.ok) { const err = await resp.json(); const msg = err.error?.message || err.detail || `请求失败 (${resp.status})`; throw new Error(msg); }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      if (controller.signal.aborted) { return; }
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const normalized = buffer.replace(/\r/g, '');
-      const lines = normalized.split('\n');
-      buffer = lines.pop() || '';
-      let eventType = 'message', eventData = '';
-      for (const line of lines) {
-        if (line === '') {
-          if (eventData) {
-            try { const data = JSON.parse(eventData); handleSSEEvent(eventType, data); } catch (e) { console.error('[SSE] handleSSEEvent error:', e.message, e.stack); }
-          }
-          eventType = 'message'; eventData = '';
-        } else if (line.startsWith('event:')) {
-          eventType = line.slice(6).trim();
-        } else if (line.startsWith('data:')) {
-          eventData += (eventData ? '\n' : '') + line.slice(5).trim();
-        }
-      }
-    }
+    const data = await resp.json();
+    STAGES.forEach(s => setStageState(s, 'done'));
+    _lastExtractData = data;
+    _dataModified = false;
+    renderEditableResult(data);
+    switchToViewMode();
+    updateMap(data);
   } catch (e) {
-    if (e.name === 'AbortError') return;
     showError(e.message || '服务暂不可用，请稍后重试');
     STAGES.forEach(s => {
       const el = document.getElementById('stage-' + s);
-      if (el.classList.contains('active')) setStageState(s, 'error');
+      if (!el.classList.contains('done')) setStageState(s, 'error');
     });
   } finally {
-    if (_activeAbortController === currentController) { _activeAbortController = null; }
     submitBtn.disabled = false;
   }
 }
 
-function handleSSEEvent(type, data) {
-  if (type === 'progress') {
-    const stageOrder = {'extract_done': 'extract', 'geocode_done': 'geocode', 'render_done': 'render'};
-    const mappedStage = stageOrder[data.stage] || data.stage;
-    const isOk = !('ok' in data) || data.ok;
-    setStageState(mappedStage, isOk ? 'done' : 'error');
-    if (isOk) {
-      const idx = STAGES.indexOf(mappedStage);
-      if (idx >= 0 && idx + 1 < STAGES.length) { setStageState(STAGES[idx + 1], 'active'); }
-    }
-  } else if (type === 'error') {
-    const stageMap = {extract: 'extract', geocode: 'geocode', render: 'render'};
-    const stage = stageMap[data.stage] || 'extract';
-    setStageState(stage, 'error');
-    showError(data.message || '处理失败');
-  } else if (type === 'result') {
-    setStageState('render', 'done');
-    _lastExtractData = data;
-    _dataModified = false;
-    document.getElementById('scale-indicator').textContent = '';
-    document.getElementById('timeline-wrap').classList.remove('active');
-    document.getElementById('unit-card').style.display = 'none';
-    renderEditableResult(data);
-    switchToViewMode();
-    updateMap(data);
-  }
-}
-
-// ── 可编辑结果面板 ──
+// ── 可编辑结果面板（适配新字段：event_name / boundaries / person_places） ──
 function renderEditableResult(data) {
   const renderBtn = document.getElementById('render-btn');
   renderBtn.disabled = true;
   renderBtn.classList.remove('active');
 
-  const nameHtml = data.campaign_name
-    ? `<strong>战役名:</strong> <input class="editable-field" id="edit-name" value="${escHtml(data.campaign_name)}" oninput="markModified()">`
-    : `<strong>战役名:</strong> <input class="editable-field" id="edit-name" placeholder="未命名" oninput="markModified()">`;
+  // event_name 编辑框
+  const nameHtml = data.event_name
+    ? '<strong>事件名:</strong> <input class="editable-field" id="edit-name" value="' + escHtml(data.event_name) + '" oninput="markModified()">'
+    : '<strong>事件名:</strong> <input class="editable-field" id="edit-name" placeholder="未命名" oninput="markModified()">';
 
-  let factionsHtml = '';
-  (data.factions || []).forEach((f, fi) => {
-    const commanders = f.commanders.map((c, ci) =>
-      `<span class="cmd-item"><input class="editable-field" id="edit-cmd-${fi}-${ci}" value="${escHtml(c)}" oninput="markModified()"><button class="del-btn" onclick="delCommander(${fi},${ci})" title="删除将领">×</button></span>`
-    ).join('');
-    factionsHtml += `<div style="margin:4px 0"><strong>${escHtml(f.name)}:</strong> 将领: ${commanders}<button class="add-btn" onclick="addCommander(${fi})">+将领</button> 兵力: <input class="editable-field" id="edit-troops-${fi}" value="${escHtml(f.troops || '')}" placeholder="未知" oninput="markModified()"></div>`;
+  // boundaries 只读列表
+  let boundariesHtml = '';
+  (data.boundaries || []).forEach(function(b) {
+    boundariesHtml += '<div class="boundary-item"><span class="boundary-tag">' + escHtml(b.name) + '</span>' + (b.description ? ' ' + escHtml(b.description) : '') + '</div>';
   });
+  if (!boundariesHtml) boundariesHtml = '<span style="color:#999">无</span>';
 
-  let unitsHtml = '';
-  const units = data.units || [];
-  if (units.length > 0) {
-    const unitRows = units.map((u, ui) => {
-      const factionColor = (u.faction || '').includes('宋') ? '#2b4c7e' : (u.faction || '').includes('金') ? '#8b4513' : '#5a7a6a';
-      const typeLabel = {infantry: '步', cavalry: '骑', mixed: '混'}[u.troop_type] || '?';
-      return `<div style="margin:2px 0;font-size:13px">
-        <span style="display:inline-block;width:8px;height:8px;background:${factionColor};margin-right:4px;vertical-align:middle"></span>
-        <strong>${escHtml(u.name)}</strong>
-        ${u.commander ? `<span style="color:#555">· ${escHtml(u.commander)}</span>` : ''}
-        <span style="display:inline-block;padding:0 4px;border-radius:2px;font-size:10px;background:#e8e0d0;margin:0 2px">${typeLabel}</span>
-        ${u.troop_count ? `<span style="color:#888;font-size:11px">${escHtml(u.troop_count)}</span>` : ''}
-      </div>`;
-    }).join('');
-    unitsHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #d5c8b0"><strong style="font-size:13px">⚔️ 部队编制</strong>${unitRows}</div>`;
-  }
+  // person_places 可编辑列表（人物 → 地点 → 关系）
+  let personPlacesHtml = '';
+  (data.person_places || []).forEach(function(pp, i) {
+    personPlacesHtml += '<div class="pp-item">' +
+      '<input class="editable-field" id="edit-pp-person-' + i + '" value="' + escHtml(pp.person) + '" placeholder="人物" style="width:70px" oninput="markModified()">' +
+      '<span style="margin:0 4px;color:#999">→</span>' +
+      '<input class="editable-field" id="edit-pp-place-' + i + '" value="' + escHtml(pp.place) + '" placeholder="地点" style="width:80px" oninput="markModified()">' +
+      '<input class="editable-field" id="edit-pp-rel-' + i + '" value="' + escHtml(pp.relation || '') + '" placeholder="关系" style="width:70px" oninput="markModified()">' +
+      '<button class="del-btn" onclick="delPersonPlace(' + i + ')" title="删除">×</button>' +
+      '</div>';
+  });
+  personPlacesHtml += '<button class="add-btn" onclick="addPersonPlace()">+人物地点</button>';
 
-  let placesHtml = (data.features || []).map((f, i) => {
+  // places 可编辑列表（保留原有逻辑）
+  let placesHtml = (data.features || []).map(function(f, i) {
     const tagClass = f.source === 'chgis' ? 'tag-chgis' : f.source === 'llm_infer' ? 'tag-llm' : 'tag-unknown';
-    const coords = (typeof f.lng === 'number' && typeof f.lat === 'number') ? ` (${f.lng.toFixed(2)}, ${f.lat.toFixed(2)})` : '';
-    return `<span class="tag ${tagClass}"><input class="editable-field" id="edit-place-${i}" value="${escHtml(f.name)}" style="width:60px" oninput="markModified()">${coords}<button class="del-btn" onclick="delPlace(${i})" title="删除地名">×</button></span>`;
+    const coords = (typeof f.lng === 'number' && typeof f.lat === 'number') ? ' (' + f.lng.toFixed(2) + ', ' + f.lat.toFixed(2) + ')' : '';
+    const dataAttrs = ' data-lng="' + (f.lng ?? '') + '" data-lat="' + (f.lat ?? '') + '" data-source="' + escHtml(f.source || 'unknown') + '" data-modern-name="' + escHtml(f.modern_name || '') + '"';
+    return '<span class="tag ' + tagClass + '"' + dataAttrs + '><input class="editable-field" id="edit-place-' + i + '" value="' + escHtml(f.name) + '" style="width:60px" oninput="markModified()">' + coords + '<button class="del-btn" onclick="delPlace(' + i + ')" title="删除地名">×</button></span>';
   }).join(' ');
-  placesHtml += ` <button class="add-btn" onclick="addPlace()">+地名</button>`;
+  placesHtml += ' <button class="add-btn" onclick="addPlace()">+地名</button>';
 
-  let routesHtml = '';
-  (data.routes || []).forEach((r, i) => {
-    routesHtml += `<div style="margin:2px 0">📌 <input class="editable-field" id="edit-route-from-${i}" value="${escHtml(r.from_place)}" style="width:60px" oninput="markModified()"> → <input class="editable-field" id="edit-route-to-${i}" value="${escHtml(r.to_place)}" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="delRoute(${i})" title="删除路线">×</button></div>`;
-  });
-  if (!routesHtml) routesHtml = '未检测到行军路线';
-  routesHtml += ` <button class="add-btn" onclick="addRoute()">+路线</button>`;
-
-  document.getElementById('campaign-info').innerHTML = `<div>${nameHtml}${factionsHtml}${unitsHtml}</div>`;
+  document.getElementById('campaign-info').innerHTML = '<div>' + nameHtml + '</div>' +
+    '<div style="margin-top:8px"><strong>边界/疆域:</strong> ' + boundariesHtml + '</div>' +
+    '<div style="margin-top:8px"><strong>人物→地点:</strong> <div style="margin-top:4px">' + personPlacesHtml + '</div></div>';
   document.getElementById('places-list').innerHTML = placesHtml;
-  document.getElementById('routes-list').innerHTML = routesHtml;
 }
 
 function markModified() {
@@ -423,62 +162,85 @@ function markModified() {
 
 function collectModifiedData() {
   const name = document.getElementById('edit-name')?.value || '';
-  const data = { campaign_name: name || null, factions: [], places: [], routes: [], dynasty: document.getElementById('dynasty-select')?.value || null, scale: _lastExtractData?.scale || null };
-  if (_lastExtractData) {
-    _lastExtractData.factions.forEach((f, fi) => {
-      const commanders = [];
-      let ci = 0;
-      while (true) { const el = document.getElementById(`edit-cmd-${fi}-${ci}`); if (!el) break; const v = el.value.trim(); if (v) commanders.push(v); ci++; }
-      const troopsEl = document.getElementById(`edit-troops-${fi}`);
-      data.factions.push({ name: f.name, commanders, troops: troopsEl?.value.trim() || null });
-    });
-  }
-  document.querySelectorAll('[id^="edit-place-"]').forEach((el) => { const v = el.value.trim(); if (v) data.places.push({ name: v, context: '' }); });
-  document.querySelectorAll('[id^="edit-route-from-"]').forEach((fromEl) => {
-    const ri = fromEl.id.replace('edit-route-from-', '');
-    const toEl = document.getElementById('edit-route-to-' + ri);
-    if (!toEl) return;
-    const from = fromEl.value.trim(); const to = toEl.value.trim();
-    if (from && to) data.routes.push({ from, to, via: [] });
+  const data = {
+    event_name: name || null,
+    boundaries: (_lastExtractData?.boundaries || []).map(function(b) { return { name: b.name, description: b.description || '' }; }),
+    person_places: [],
+    places: [],
+    dynasty: document.getElementById('dynasty-select')?.value || null,
+    scale: _lastExtractData?.scale || null
+  };
+
+  // 收集 person_places（可编辑）
+  document.querySelectorAll('[id^="edit-pp-person-"]').forEach(function(el) {
+    const idx = el.id.replace('edit-pp-person-', '');
+    const person = el.value.trim();
+    const placeEl = document.getElementById('edit-pp-place-' + idx);
+    const relEl = document.getElementById('edit-pp-rel-' + idx);
+    const place = placeEl?.value.trim() || '';
+    const relation = relEl?.value.trim() || '';
+    if (person && place) {
+      data.person_places.push({ person: person, place: place, relation: relation });
+    }
   });
+
+  // 收集 places（含坐标来源等几何信息）
+  document.querySelectorAll('[id^="edit-place-"]').forEach(function(el) {
+    const v = el.value.trim();
+    if (!v) return;
+    const tag = el.closest('.tag');
+    const place = { name: v, context: '' };
+    if (tag) {
+      const lng = tag.getAttribute('data-lng');
+      const lat = tag.getAttribute('data-lat');
+      const source = tag.getAttribute('data-source');
+      const modernName = tag.getAttribute('data-modern-name');
+      if (lng) place.lng = parseFloat(lng);
+      if (lat) place.lat = parseFloat(lat);
+      if (source) place.source = source;
+      if (modernName) place.modern_name = modernName;
+    }
+    data.places.push(place);
+  });
+
   return data;
 }
 
 // ── 编辑操作 ──
-function delPlace(i) { const el = document.getElementById(`edit-place-${i}`); if (el) { el.closest('.tag')?.remove(); markModified(); } }
+function delPlace(i) { const el = document.getElementById('edit-place-' + i); if (el) { el.closest('.tag')?.remove(); markModified(); } }
 function addPlace() {
   const container = document.getElementById('places-list');
   const btn = container.querySelector('.add-btn');
   const span = document.createElement('span');
   span.className = 'tag tag-unknown';
-  const existingIds = Array.from(container.querySelectorAll('.tag input[id^="edit-place-"]')).map(el => parseInt(el.id.replace('edit-place-', '')));
-  const idx = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 0;
-  span.innerHTML = `<input class="editable-field" id="edit-place-${idx}" value="新地名" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="this.closest('.tag').remove();markModified()">×</button>`;
+  const existingIds = Array.from(container.querySelectorAll('.tag input[id^="edit-place-"]')).map(function(el) { return parseInt(el.id.replace('edit-place-', '')); }).filter(function(id) { return !isNaN(id); });
+  const idx = existingIds.length > 0 ? Math.max.apply(null, existingIds) + 1 : 0;
+  span.innerHTML = '<input class="editable-field" id="edit-place-' + idx + '" value="新地名" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="this.closest(\'.tag\').remove();markModified()">×</button>';
   btn.before(span);
   markModified();
 }
-function delCommander(fi, ci) { const el = document.getElementById(`edit-cmd-${fi}-${ci}`); if (el) { el.closest('.cmd-item')?.remove(); markModified(); } }
-function addCommander(fi) {
-  const existingIds = Array.from(document.querySelectorAll(`[id^="edit-cmd-${fi}-"]`)).map(el => parseInt(el.id.split('-').pop()));
-  const ci = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 0;
-  const parent = document.querySelector(`[onclick="addCommander(${fi})"]`)?.parentNode;
-  if (!parent) return;
-  const span = document.createElement('span');
-  span.className = 'cmd-item';
-  span.innerHTML = `<input class="editable-field" id="edit-cmd-${fi}-${ci}" value="新将领" oninput="markModified()"><button class="del-btn" onclick="this.closest('.cmd-item').remove();markModified()">×</button>`;
-  parent.querySelector('.add-btn')?.before(span);
-  markModified();
+function delPersonPlace(i) {
+  const personEl = document.getElementById('edit-pp-person-' + i);
+  if (personEl) { personEl.closest('.pp-item')?.remove(); markModified(); }
 }
-function delRoute(i) { const fromEl = document.getElementById(`edit-route-from-${i}`); if (fromEl) fromEl.closest('div').remove(); markModified(); }
-function addRoute() {
-  const container = document.getElementById('routes-list');
-  const existingIds = Array.from(container.querySelectorAll('[id^="edit-route-from-"]')).map(el => parseInt(el.id.replace('edit-route-from-', '')));
-  const ri = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 0;
+function addPersonPlace() {
+  const container = document.getElementById('campaign-info');
+  const ppItems = container.querySelectorAll('.pp-item');
+  const existingIds = Array.from(ppItems).map(function(el) {
+    const input = el.querySelector('input[id^="edit-pp-person-"]');
+    return input ? parseInt(input.id.replace('edit-pp-person-', '')) : -1;
+  }).filter(function(id) { return !isNaN(id); });
+  const idx = existingIds.length > 0 ? Math.max.apply(null, existingIds) + 1 : 0;
+  const addBtn = container.querySelector('.add-btn');
+  if (!addBtn) return;
   const div = document.createElement('div');
-  div.style.margin = '2px 0';
-  div.innerHTML = `📌 <input class="editable-field" id="edit-route-from-${ri}" value="起点" style="width:60px" oninput="markModified()"> → <input class="editable-field" id="edit-route-to-${ri}" value="终点" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="this.parentElement.remove();markModified()">×</button>`;
-  const btn = container.querySelector('.add-btn');
-  btn.before(div);
+  div.className = 'pp-item';
+  div.innerHTML = '<input class="editable-field" id="edit-pp-person-' + idx + '" value="" placeholder="人物" style="width:70px" oninput="markModified()">' +
+    '<span style="margin:0 4px;color:#999">→</span>' +
+    '<input class="editable-field" id="edit-pp-place-' + idx + '" value="" placeholder="地点" style="width:80px" oninput="markModified()">' +
+    '<input class="editable-field" id="edit-pp-rel-' + idx + '" value="" placeholder="关系" style="width:70px" oninput="markModified()">' +
+    '<button class="del-btn" onclick="this.closest(\'.pp-item\').remove();markModified()">×</button>';
+  addBtn.before(div);
   markModified();
 }
 
@@ -492,20 +254,20 @@ async function reRender() {
   const btn = document.getElementById('render-btn');
   btn.disabled = true;
   btn.classList.remove('active');
-  btn.textContent = '⏳ 重新渲染中...';
+  btn.textContent = '重新渲染中...';
   try {
     const resp = await fetch('/api/v1/render', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     if (!resp.ok) { const err = await resp.json(); const msg = err.error?.message || err.detail || '渲染失败'; throw new Error(msg); }
     const result = await resp.json();
-    _lastExtractData = result;
-    _dataModified = false;
-    document.getElementById('timeline-wrap').classList.remove('active');
     updateMap(result);
-    btn.textContent = '✓ 已更新';
-    setTimeout(() => { btn.textContent = '🔄 重新渲染'; }, 1500);
+    _lastExtractData = result;
+    renderEditableResult(result);
+    _dataModified = false;
+    btn.textContent = '已更新';
+    setTimeout(function() { btn.textContent = '重新渲染'; }, 1500);
   } catch (e) {
     showError(e.message);
-    btn.textContent = '🔄 重试';
+    btn.textContent = '重试';
     btn.disabled = false;
   } finally {
     _isRendering = false;
@@ -513,12 +275,12 @@ async function reRender() {
 }
 
 // ── 键盘快捷键 ──
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); analyze(); }
   if (e.key === 'Escape') {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    document.querySelectorAll('.maplibregl-popup').forEach(p => p.remove());
+    document.querySelectorAll('.maplibregl-popup').forEach(function(p) { p.remove(); });
     document.getElementById('error-msg-input').style.display = 'none';
     document.getElementById('error-msg-view').style.display = 'none';
   }

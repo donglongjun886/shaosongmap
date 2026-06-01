@@ -7,78 +7,68 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-class Faction(BaseModel):
-    """参战一方。"""
-
-    name: str = Field(description='阵营名称，如「宋军」「金军」')
-    commanders: list[str] = Field(default_factory=list, description='将领列表')
-    troops: str | None = Field(default=None, description='兵力描述，如「三万」「十万」')
-
-
-PlaceType = Literal['city', 'mountain_pass', 'river', 'mountain', 'region', 'battlefield', 'camp']
-
-
 class Place(BaseModel):
     """文本中出现的地名。"""
 
     name: str = Field(description='古地名，如「汴京」「襄阳」')
     context: str = Field(default='', description='原文字段，供消歧义使用')
-    place_type: PlaceType | None = Field(
-        default=None,
-        description='地名类型：city(城池) / mountain_pass(关隘) / river(河流) / mountain(山脉) / region(行政区) / battlefield(战场) / camp(营寨)',
-    )
+    lng: float | None = Field(default=None, description='经度（编辑面板传回）')
+    lat: float | None = Field(default=None, description='纬度（编辑面板传回）')
+    source: str | None = Field(default=None, description='数据来源：chgis / llm_infer / unknown')
+    modern_name: str | None = Field(default=None, description='现代地名')
+    confidence: str | None = Field(default=None, description='LLM 推断可信度：high / medium / low')
 
 
-class Route(BaseModel):
-    """行军路线段。"""
+class Boundary(BaseModel):
+    """边界/疆域描述。"""
 
-    model_config = {'populate_by_name': True}
-
-    from_place: str = Field(alias='from', description='起点地名')
-    to_place: str = Field(alias='to', description='终点地名')
-    via: list[str] = Field(default_factory=list, description='途经地点')
+    name: str = Field(description='边界名称，如「宋金边界」')
+    description: str = Field(default='', description='边界描述，如「西起秦岭，东至淮河」')
 
 
-class CampaignExtract(BaseModel):
-    """Extractor 输出：从战役文本提取的结构化数据。"""
+class PersonPlace(BaseModel):
+    """人物与地点的关联。"""
 
-    campaign_name: str | None = Field(default=None, description='战役名称')
-    factions: list[Faction] = Field(default_factory=list, description='参战方')
+    person: str = Field(description='人物名，如「岳飞」')
+    place: str = Field(description='关联地名，如「襄阳」')
+    relation: str = Field(default='', description='关系类型，如「驻扎」「出生」「战死」')
+
+
+class GeoEntityExtract(BaseModel):
+    """Extractor 输出：从历史文本提取的地理实体数据。"""
+
+    event_name: str | None = Field(default=None, description='事件/战役名称')
+    dynasty: str | None = Field(default=None, description='朝代，如「南宋」「北宋」')
+    boundaries: list[Boundary] = Field(default_factory=list, description='边界/疆域')
+    person_places: list[PersonPlace] = Field(default_factory=list, description='人物→地点关联')
     places: list[Place] = Field(default_factory=list, description='地名列表')
-    routes: list[Route] = Field(default_factory=list, description='行军路线')
+    scale: Literal['tactical', 'battle', 'strategic'] | None = Field(
+        default=None, description='地图尺度: tactical/battle/strategic'
+    )
 
 
 class GeoFeature(BaseModel):
     """单个地名的地理坐标特征。"""
 
     name: str = Field(description='地名')
-    lng: float | None = Field(default=None, description='经度')
-    lat: float | None = Field(default=None, description='纬度')
-    source: str = Field(
+    lng: float | None = Field(default=None, description='经度', ge=-180, le=180)
+    lat: float | None = Field(default=None, description='纬度', ge=-90, le=90)
+    source: Literal['chgis', 'llm_infer', 'unknown'] = Field(
         default='unknown',
         description='数据来源：chgis / llm_infer / unknown',
     )
     modern_name: str | None = Field(default=None, description='现代地名')
-    confidence: str | None = Field(
+    confidence: Literal['high', 'medium', 'low'] | None = Field(
         default=None, description='LLM 推断时的可信度：high / medium / low'
     )
-    place_type: PlaceType | None = Field(
+    place_type: Literal['city', 'mountain', 'river', 'pass', 'region', 'unknown'] | None = Field(
         default=None,
-        description='地名类型：city / mountain_pass / river / mountain / region / battlefield / camp',
+        description='地名类型',
     )
 
 
-class RouteLine(BaseModel):
-    """行军路线的 GeoJSON LineString 片段。"""
+class GeoEntityMap(BaseModel):
+    """API 最终输出：地理实体数据 + 地图要素。"""
 
-    from_place: str
-    to_place: str
-    coordinates: list[list[float]] = Field(description='GeoJSON 坐标数组 [[lng, lat], [lng, lat]]')
-
-
-class CampaignMap(BaseModel):
-    """API 最终输出：战役数据 + 地图要素。"""
-
-    extract: CampaignExtract = Field(description='原始提取结果')
+    extract: GeoEntityExtract = Field(description='原始提取结果')
     features: list[GeoFeature] = Field(description='地名坐标特征列表')
-    routes: list[RouteLine] = Field(description='行军路线 GeoJSON 坐标')

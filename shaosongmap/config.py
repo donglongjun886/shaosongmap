@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     deepseek_base_url: str = 'https://api.deepseek.com'
     dashscope_api_key: str = ''
     cors_origins: list[str] = ['*']
+    maptiler_key: str = ''
     log_level: str = 'INFO'
     log_format: str = 'text'
 

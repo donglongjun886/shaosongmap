@@ -6,12 +6,12 @@ const _errorToast = document.getElementById('error-toast');
 let _errorCount = 0;
 window.addEventListener('error', function(e) {
   _errorCount++;
-  _errorToast.innerHTML = '<span class="error-count">JS ERROR #' + _errorCount + '</span>' + e.message + '\n → ' + (e.filename || 'inline').replace(/^.*[\\/]/, '') + ':' + e.lineno;
+  _errorToast.innerHTML = '<span class="error-count">JS ERROR #' + _errorCount + '</span>' + escHtml(e.message) + '\n → ' + escHtml((e.filename || 'inline').replace(/^.*[\\/]/, '') + ':' + e.lineno);
   _errorToast.classList.add('show');
 });
 window.addEventListener('unhandledrejection', function(e) {
   _errorCount++;
-  _errorToast.innerHTML = '<span class="error-count">PROMISE ERROR #' + _errorCount + '</span>' + (e.reason ? (e.reason.message || String(e.reason)) : 'Unknown');
+  _errorToast.innerHTML = '<span class="error-count">PROMISE ERROR #' + _errorCount + '</span>' + escHtml(e.reason ? (e.reason.message || String(e.reason)) : 'Unknown');
   _errorToast.classList.add('show');
 });
 
@@ -53,7 +53,8 @@ document.addEventListener('paste', (e) => {
   for (const item of items) {
     if (item.type.startsWith('image/')) {
       e.preventDefault();
-      addToBatch(item.getAsFile());
+      const file = item.getAsFile();
+      if (file) addToBatch(file);
     }
   }
 });
@@ -64,14 +65,16 @@ function handleFileSelect(e) {
 }
 
 async function addToBatch(file) {
-  if (!file.type.match(/image\/(png|jpeg)/)) { showError('仅支持 PNG 和 JPEG 格式'); return; }
+  if (!(/^image\/(png|jpeg)$/.test(file.type))) { showError('仅支持 PNG 和 JPEG 格式'); return; }
   if (_imageBatch.length >= 10) { showError('每次最多添加 10 张截图'); return; }
   var errorEl = document.getElementById('error-msg-input');
   errorEl.style.display = 'none';
   const resized = await resizeImage(file, 1920);
-  const dataUrl = await new Promise((resolve) => {
+  if (_imageBatch.length >= 10) { showError('每次最多添加 10 张截图'); return; }
+  const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error('文件读取失败'));
     reader.readAsDataURL(resized);
   });
   _imageBatch.push({ blob: resized, dataUrl });
@@ -103,7 +106,7 @@ function clearBatch() {
 }
 
 async function resizeImage(file, maxDim) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
@@ -117,9 +120,9 @@ async function resizeImage(file, maxDim) {
       canvas.width = width; canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => resolve(blob), file.type, 0.85);
+      canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error('Canvas 转换失败')); }, file.type, 0.85);
     };
-    img.onerror = function() { URL.revokeObjectURL(url); };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
     img.src = url;
   });
 }
@@ -135,6 +138,7 @@ async function startBatchOCR() {
   document.querySelectorAll('.thumb-status').forEach(el => el.remove());
   _abortPrevious();
   const controller = new AbortController();
+  const currentController = controller;
   _activeAbortController = controller;
 
   try {
@@ -150,15 +154,18 @@ async function startBatchOCR() {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
+      const normalized = buffer.replace(/\r/g, '');
+      const lines = normalized.split('\n');
       buffer = lines.pop() || '';
-      let eventType = '', eventData = '';
+      let eventType = 'message', eventData = '';
       for (const line of lines) {
-        if (line.startsWith('event: ')) { eventType = line.slice(7); }
-        else if (line.startsWith('data: ')) {
-          eventData = line.slice(6);
-          if (eventType && eventData) { try { handleBatchSSE(eventType, JSON.parse(eventData)); } catch (_) {} }
-          eventType = ''; eventData = '';
+        if (line === '') {
+          if (eventData) { try { handleBatchSSE(eventType, JSON.parse(eventData)); } catch (_) {} }
+          eventType = 'message'; eventData = '';
+        } else if (line.startsWith('event:')) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          eventData += (eventData ? '\n' : '') + line.slice(5).trim();
         }
       }
     }
@@ -168,7 +175,7 @@ async function startBatchOCR() {
     ocrProgress.classList.remove('active');
     document.getElementById('batch-controls').classList.add('active');
   } finally {
-    _activeAbortController = null;
+    if (_activeAbortController === currentController) { _activeAbortController = null; }
   }
 }
 
@@ -238,17 +245,29 @@ function resetProgress() {
   STAGES.forEach(s => {
     const el = document.getElementById('stage-' + s);
     el.className = 'pipeline-stage';
-    el.lastChild.textContent = el.lastChild.textContent.replace(/^[✓✗⏳]\s*/, '');
+    const currentText = (el.textContent || '').replace(/^[✓✗⏳]\s*/, '');
+    if (el.lastChild && el.lastChild.nodeType === Node.TEXT_NODE) {
+      el.lastChild.textContent = currentText;
+    } else {
+      el.appendChild(document.createTextNode(currentText));
+    }
   });
 }
 
 function setStageState(stage, state) {
   const el = document.getElementById('stage-' + stage);
   el.className = 'pipeline-stage ' + state;
-  const text = el.lastChild.textContent.replace(/^[✓✗⏳]\s*/, '');
-  if (state === 'done') el.lastChild.textContent = '✓ ' + text;
-  else if (state === 'error') el.lastChild.textContent = '✗ ' + text;
-  else if (state === 'active') el.lastChild.textContent = '⏳ ' + text;
+  const currentText = (el.textContent || '').replace(/^[✓✗⏳]\s*/, '');
+  const last = el.lastChild;
+  if (last && last.nodeType === Node.TEXT_NODE) {
+    if (state === 'done') last.textContent = '✓ ' + currentText;
+    else if (state === 'error') last.textContent = '✗ ' + currentText;
+    else if (state === 'active') last.textContent = '⏳ ' + currentText;
+  } else {
+    el.appendChild(document.createTextNode(''));
+    const prefix = state === 'done' ? '✓ ' : state === 'error' ? '✗ ' : state === 'active' ? '⏳ ' : '';
+    el.lastChild.textContent = prefix + currentText;
+  }
 }
 
 // ── SSE 提取 ──
@@ -261,10 +280,11 @@ async function analyze() {
   document.getElementById('result-panel').style.display = 'block';
   resetProgress();
 
-  const dynasty = document.getElementById('dynasty-select').value;
+  const dynasty = document.getElementById('dynasty-select')?.value || '';
 
   _abortPrevious();
   const controller = new AbortController();
+  const currentController = controller;
   _activeAbortController = controller;
 
   try {
@@ -282,17 +302,20 @@ async function analyze() {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
+      const normalized = buffer.replace(/\r/g, '');
+      const lines = normalized.split('\n');
       buffer = lines.pop() || '';
-      let eventType = '', eventData = '';
+      let eventType = 'message', eventData = '';
       for (const line of lines) {
-        if (line.startsWith('event: ')) { eventType = line.slice(7); }
-        else if (line.startsWith('data: ')) {
-          eventData = line.slice(6);
-          if (eventType === 'progress' || eventType === 'result' || eventType === 'error') {
+        if (line === '') {
+          if (eventData) {
             try { const data = JSON.parse(eventData); handleSSEEvent(eventType, data); } catch (e) { console.error('[SSE] handleSSEEvent error:', e.message, e.stack); }
           }
-          eventType = ''; eventData = '';
+          eventType = 'message'; eventData = '';
+        } else if (line.startsWith('event:')) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          eventData += (eventData ? '\n' : '') + line.slice(5).trim();
         }
       }
     }
@@ -304,7 +327,7 @@ async function analyze() {
       if (el.classList.contains('active')) setStageState(s, 'error');
     });
   } finally {
-    _activeAbortController = null;
+    if (_activeAbortController === currentController) { _activeAbortController = null; }
     submitBtn.disabled = false;
   }
 }
@@ -313,9 +336,12 @@ function handleSSEEvent(type, data) {
   if (type === 'progress') {
     const stageOrder = {'extract_done': 'extract', 'geocode_done': 'geocode', 'render_done': 'render'};
     const mappedStage = stageOrder[data.stage] || data.stage;
-    setStageState(mappedStage, 'ok' in data && !data.ok ? 'error' : 'done');
-    const idx = STAGES.indexOf(mappedStage);
-    if (idx >= 0 && idx + 1 < STAGES.length) { setStageState(STAGES[idx + 1], 'active'); }
+    const isOk = !('ok' in data) || data.ok;
+    setStageState(mappedStage, isOk ? 'done' : 'error');
+    if (isOk) {
+      const idx = STAGES.indexOf(mappedStage);
+      if (idx >= 0 && idx + 1 < STAGES.length) { setStageState(STAGES[idx + 1], 'active'); }
+    }
   } else if (type === 'error') {
     const stageMap = {extract: 'extract', geocode: 'geocode', render: 'render'};
     const stage = stageMap[data.stage] || 'extract';
@@ -345,9 +371,9 @@ function renderEditableResult(data) {
     : `<strong>战役名:</strong> <input class="editable-field" id="edit-name" placeholder="未命名" oninput="markModified()">`;
 
   let factionsHtml = '';
-  data.factions.forEach((f, fi) => {
+  (data.factions || []).forEach((f, fi) => {
     const commanders = f.commanders.map((c, ci) =>
-      `<input class="editable-field" id="edit-cmd-${fi}-${ci}" value="${escHtml(c)}" oninput="markModified()"><button class="del-btn" onclick="delCommander(${fi},${ci})" title="删除将领">×</button>`
+      `<span class="cmd-item"><input class="editable-field" id="edit-cmd-${fi}-${ci}" value="${escHtml(c)}" oninput="markModified()"><button class="del-btn" onclick="delCommander(${fi},${ci})" title="删除将领">×</button></span>`
     ).join('');
     factionsHtml += `<div style="margin:4px 0"><strong>${escHtml(f.name)}:</strong> 将领: ${commanders}<button class="add-btn" onclick="addCommander(${fi})">+将领</button> 兵力: <input class="editable-field" id="edit-troops-${fi}" value="${escHtml(f.troops || '')}" placeholder="未知" oninput="markModified()"></div>`;
   });
@@ -369,15 +395,15 @@ function renderEditableResult(data) {
     unitsHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #d5c8b0"><strong style="font-size:13px">⚔️ 部队编制</strong>${unitRows}</div>`;
   }
 
-  let placesHtml = data.features.map((f, i) => {
+  let placesHtml = (data.features || []).map((f, i) => {
     const tagClass = f.source === 'chgis' ? 'tag-chgis' : f.source === 'llm_infer' ? 'tag-llm' : 'tag-unknown';
-    const coords = f.lng ? ` (${f.lng.toFixed(2)}, ${f.lat.toFixed(2)})` : '';
+    const coords = (typeof f.lng === 'number' && typeof f.lat === 'number') ? ` (${f.lng.toFixed(2)}, ${f.lat.toFixed(2)})` : '';
     return `<span class="tag ${tagClass}"><input class="editable-field" id="edit-place-${i}" value="${escHtml(f.name)}" style="width:60px" oninput="markModified()">${coords}<button class="del-btn" onclick="delPlace(${i})" title="删除地名">×</button></span>`;
   }).join(' ');
   placesHtml += ` <button class="add-btn" onclick="addPlace()">+地名</button>`;
 
   let routesHtml = '';
-  data.routes.forEach((r, i) => {
+  (data.routes || []).forEach((r, i) => {
     routesHtml += `<div style="margin:2px 0">📌 <input class="editable-field" id="edit-route-from-${i}" value="${escHtml(r.from_place)}" style="width:60px" oninput="markModified()"> → <input class="editable-field" id="edit-route-to-${i}" value="${escHtml(r.to_place)}" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="delRoute(${i})" title="删除路线">×</button></div>`;
   });
   if (!routesHtml) routesHtml = '未检测到行军路线';
@@ -397,7 +423,7 @@ function markModified() {
 
 function collectModifiedData() {
   const name = document.getElementById('edit-name')?.value || '';
-  const data = { campaign_name: name || null, factions: [], places: [], routes: [], dynasty: document.getElementById('dynasty-select').value || null, scale: _lastExtractData?.scale || null };
+  const data = { campaign_name: name || null, factions: [], places: [], routes: [], dynasty: document.getElementById('dynasty-select')?.value || null, scale: _lastExtractData?.scale || null };
   if (_lastExtractData) {
     _lastExtractData.factions.forEach((f, fi) => {
       const commanders = [];
@@ -407,17 +433,14 @@ function collectModifiedData() {
       data.factions.push({ name: f.name, commanders, troops: troopsEl?.value.trim() || null });
     });
   }
-  let pi = 0;
-  while (true) { const el = document.getElementById(`edit-place-${pi}`); if (!el) break; const v = el.value.trim(); if (v) data.places.push({ name: v, context: '' }); pi++; }
-  let ri = 0;
-  while (true) {
-    const fromEl = document.getElementById(`edit-route-from-${ri}`);
-    const toEl = document.getElementById(`edit-route-to-${ri}`);
-    if (!fromEl || !toEl) break;
+  document.querySelectorAll('[id^="edit-place-"]').forEach((el) => { const v = el.value.trim(); if (v) data.places.push({ name: v, context: '' }); });
+  document.querySelectorAll('[id^="edit-route-from-"]').forEach((fromEl) => {
+    const ri = fromEl.id.replace('edit-route-from-', '');
+    const toEl = document.getElementById('edit-route-to-' + ri);
+    if (!toEl) return;
     const from = fromEl.value.trim(); const to = toEl.value.trim();
     if (from && to) data.routes.push({ from, to, via: [] });
-    ri++;
-  }
+  });
   return data;
 }
 
@@ -428,25 +451,29 @@ function addPlace() {
   const btn = container.querySelector('.add-btn');
   const span = document.createElement('span');
   span.className = 'tag tag-unknown';
-  const idx = container.querySelectorAll('.tag').length;
+  const existingIds = Array.from(container.querySelectorAll('.tag input[id^="edit-place-"]')).map(el => parseInt(el.id.replace('edit-place-', '')));
+  const idx = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 0;
   span.innerHTML = `<input class="editable-field" id="edit-place-${idx}" value="新地名" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="this.closest('.tag').remove();markModified()">×</button>`;
   btn.before(span);
   markModified();
 }
-function delCommander(fi, ci) { const el = document.getElementById(`edit-cmd-${fi}-${ci}`); if (el) { el.previousElementSibling?.remove(); el.nextElementSibling?.remove(); el.remove(); markModified(); } }
+function delCommander(fi, ci) { const el = document.getElementById(`edit-cmd-${fi}-${ci}`); if (el) { el.closest('.cmd-item')?.remove(); markModified(); } }
 function addCommander(fi) {
-  let ci = 0;
-  while (document.getElementById(`edit-cmd-${fi}-${ci}`)) ci++;
-  const parent = document.querySelector(`[onclick="addCommander(${fi})"]`).parentNode;
+  const existingIds = Array.from(document.querySelectorAll(`[id^="edit-cmd-${fi}-"]`)).map(el => parseInt(el.id.split('-').pop()));
+  const ci = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 0;
+  const parent = document.querySelector(`[onclick="addCommander(${fi})"]`)?.parentNode;
+  if (!parent) return;
   const span = document.createElement('span');
-  span.innerHTML = `<input class="editable-field" id="edit-cmd-${fi}-${ci}" value="新将领" oninput="markModified()"><button class="del-btn" onclick="this.previousElementSibling.remove();this.remove();markModified()">×</button>`;
-  parent.querySelector('.add-btn').before(span);
+  span.className = 'cmd-item';
+  span.innerHTML = `<input class="editable-field" id="edit-cmd-${fi}-${ci}" value="新将领" oninput="markModified()"><button class="del-btn" onclick="this.closest('.cmd-item').remove();markModified()">×</button>`;
+  parent.querySelector('.add-btn')?.before(span);
   markModified();
 }
 function delRoute(i) { const fromEl = document.getElementById(`edit-route-from-${i}`); if (fromEl) fromEl.closest('div').remove(); markModified(); }
 function addRoute() {
   const container = document.getElementById('routes-list');
-  let ri = container.querySelectorAll('[id^="edit-route-from-"]').length;
+  const existingIds = Array.from(container.querySelectorAll('[id^="edit-route-from-"]')).map(el => parseInt(el.id.replace('edit-route-from-', '')));
+  const ri = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 0;
   const div = document.createElement('div');
   div.style.margin = '2px 0';
   div.innerHTML = `📌 <input class="editable-field" id="edit-route-from-${ri}" value="起点" style="width:60px" oninput="markModified()"> → <input class="editable-field" id="edit-route-to-${ri}" value="终点" style="width:60px" oninput="markModified()"><button class="del-btn" onclick="this.parentElement.remove();markModified()">×</button>`;
@@ -456,7 +483,11 @@ function addRoute() {
 }
 
 // ── 重新渲染 ──
+let _isRendering = false;
+
 async function reRender() {
+  if (_isRendering) return;
+  _isRendering = true;
   const data = collectModifiedData();
   const btn = document.getElementById('render-btn');
   btn.disabled = true;
@@ -476,6 +507,8 @@ async function reRender() {
     showError(e.message);
     btn.textContent = '🔄 重试';
     btn.disabled = false;
+  } finally {
+    _isRendering = false;
   }
 }
 
@@ -483,9 +516,10 @@ async function reRender() {
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); analyze(); }
   if (e.key === 'Escape') {
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     document.querySelectorAll('.maplibregl-popup').forEach(p => p.remove());
     document.getElementById('error-msg-input').style.display = 'none';
     document.getElementById('error-msg-view').style.display = 'none';
   }
 });
-}
